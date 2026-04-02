@@ -342,7 +342,7 @@ function ReportTab({ token }) {
   const [pdfEmp, setPdfEmp] = useState('');
   const [pdfMonth, setPdfMonth] = useState('');
   const [generating, setGenerating] = useState(false);
-  const [storeName, setStoreName] = useState('Pet Shop');
+  const [storeName, setStoreName] = useState('Pet Patas');
 
   useEffect(() => {
     const now = new Date();
@@ -664,7 +664,7 @@ function EmployeeDetailView({ token, employee, onBack }) {
   });
   const [photoModal, setPhotoModal] = useState({ open: false, loading: false, src: null });
   const [generating, setGenerating] = useState(false);
-  const [storeName, setStoreName] = useState('Pet Shop');
+  const [storeName, setStoreName] = useState('Pet Patas');
 
   const authFetch = useCallback((url) =>
     fetch(url, { headers: { Authorization: `Bearer ${token}` } }), [token]);

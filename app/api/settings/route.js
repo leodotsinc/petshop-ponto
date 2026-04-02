@@ -12,7 +12,7 @@ export async function GET() {
     const storeName = await db('settings').where('key', 'store_name').first();
 
     return NextResponse.json({
-      store_name: storeName?.value || 'Pet Shop',
+      store_name: storeName?.value || 'Pet Patas',
     });
   } catch (err) {
     console.error('Erro ao buscar settings:', err);
@@ -36,7 +36,7 @@ export async function PUT(request) {
 
     if (store_name !== undefined) {
       await db('settings')
-        .insert({ key: 'store_name', value: store_name.trim() || 'Pet Shop' })
+        .insert({ key: 'store_name', value: store_name.trim() || 'Pet Patas' })
         .onConflict('key')
         .merge();
     }

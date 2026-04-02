@@ -6,7 +6,7 @@ import Link from 'next/link';
 export default function PontoPage() {
   const [screen, setScreen] = useState('select');
   const [employees, setEmployees] = useState([]);
-  const [storeName, setStoreName] = useState('Pet Shop');
+  const [storeName, setStoreName] = useState('Pet Patas');
   const [selectedEmp, setSelectedEmp] = useState(null);
   const [nextType, setNextType] = useState('entrada');
   const [photo, setPhoto] = useState(null);
