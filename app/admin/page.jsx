@@ -490,6 +490,35 @@ function SettingsTab({ token }) {
     loadEmployees();
   }
 
+  const [deleteModal, setDeleteModal] = useState({ open: false, employee: null, password: '', loading: false, error: '' });
+
+  function openDeleteModal(emp) {
+    setDeleteModal({ open: true, employee: emp, password: '', loading: false, error: '' });
+  }
+
+  function closeDeleteModal() {
+    setDeleteModal({ open: false, employee: null, password: '', loading: false, error: '' });
+  }
+
+  async function handlePermanentDelete() {
+    if (!deleteModal.password) {
+      setDeleteModal((prev) => ({ ...prev, error: 'Digite sua senha para confirmar.' }));
+      return;
+    }
+    setDeleteModal((prev) => ({ ...prev, loading: true, error: '' }));
+    const res = await authFetch(`/api/employees/${deleteModal.employee.id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ permanent: true, password: deleteModal.password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setDeleteModal((prev) => ({ ...prev, loading: false, error: data.error || 'Erro ao deletar.' }));
+      return;
+    }
+    closeDeleteModal();
+    loadEmployees();
+  }
+
   async function handleSaveStoreName() {
     await authFetch('/api/settings', { method: 'PUT', body: JSON.stringify({ store_name: storeName }) });
     setStoreMsg('Salvo!');
@@ -534,6 +563,47 @@ function SettingsTab({ token }) {
           </div>
         )}
 
+        {/* Modal de exclusão permanente */}
+        {deleteModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100">
+                  <IconTrash />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-800">Exclusão permanente</p>
+                  <p className="text-xs text-slate-400">{deleteModal.employee?.name}</p>
+                </div>
+              </div>
+              <div className="mb-4 rounded-xl bg-red-50 p-3 text-xs text-red-700 ring-1 ring-inset ring-red-200">
+                ⚠️ Esta ação é <strong>irreversível</strong>. Todos os registros de ponto deste funcionário serão apagados para sempre.
+              </div>
+              <div className="mb-4">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Confirme sua senha de admin</label>
+                <input
+                  type="password"
+                  value={deleteModal.password}
+                  onChange={(e) => setDeleteModal((prev) => ({ ...prev, password: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && handlePermanentDelete()}
+                  placeholder="••••••••"
+                  autoFocus
+                  className="input-style"
+                />
+                {deleteModal.error && <p className="mt-2 text-xs font-semibold text-red-600">{deleteModal.error}</p>}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={closeDeleteModal} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                  Cancelar
+                </button>
+                <button onClick={handlePermanentDelete} disabled={deleteModal.loading} className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-50">
+                  {deleteModal.loading ? 'Deletando...' : 'Deletar tudo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Inativos */}
         {employees.filter((e) => !e.active).length > 0 && (
           <div className="mb-4">
@@ -545,7 +615,10 @@ function SettingsTab({ token }) {
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-200 text-xs font-bold text-slate-400">{initials(emp.name)}</div>
                     <span className="text-sm font-medium text-slate-400">{emp.name}</span>
                   </div>
-                  <button onClick={() => handleReactivateEmployee(emp.id)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50">Reativar</button>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleReactivateEmployee(emp.id)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50">Reativar</button>
+                    <button onClick={() => openDeleteModal(emp)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-500 transition hover:bg-red-50">Deletar</button>
+                  </div>
                 </div>
               ))}
             </div>
