@@ -60,6 +60,15 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p ${{ secrets.SSH_PORT }} ${{ secrets.VPS_IP }} >> ~/.ssh/known_hosts
 
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy docker-compose to VPS
+        run: |
+          scp -i ~/.ssh/id_ed25519 -P ${{ secrets.SSH_PORT }} \
+            docker-compose.prod.yml \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.VPS_IP }}:~/apps/petshop-ponto/docker-compose.yml
+
       - name: Deploy via SSH using Docker Compose
         run: |
           ssh -i ~/.ssh/id_ed25519 -p ${{ secrets.SSH_PORT }} ${{ secrets.DEPLOY_USER }}@${{ secrets.VPS_IP }} << 'ENDSSH'
