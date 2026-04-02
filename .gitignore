@@ -1,4 +1,25 @@
+# Dependências
 node_modules/
+
+# Build Next.js
 .next/
+
+# Arquivos de ambiente — NUNCA commitar .env com valores reais
+.env
 .env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+
+# O .env.example é o único que vai pro git (sem valores reais)
+
+# Logs
 *.log
+npm-debug.log*
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
