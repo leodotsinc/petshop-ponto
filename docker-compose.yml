@@ -1,0 +1,30 @@
+services:
+  db:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: ponto
+      POSTGRES_PASSWORD: ponto123
+      POSTGRES_DB: ponto
+    volumes:
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ponto"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://ponto:ponto123@db:5432/ponto
+      JWT_SECRET: ${JWT_SECRET:-troque-este-segredo-em-producao}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
