@@ -461,25 +461,33 @@ function SettingsTab({ token }) {
   const authFetch = useCallback((url, opts = {}) =>
     fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...opts.headers } }), [token]);
 
-  useEffect(() => {
-    fetch('/api/employees').then((r) => r.json()).then(setEmployees);
-    fetch('/api/settings').then((r) => r.json()).then((s) => setStoreName(s.store_name));
+  const loadEmployees = useCallback(() => {
+    fetch('/api/employees?include_inactive=true').then((r) => r.json()).then(setEmployees);
   }, []);
+
+  useEffect(() => {
+    loadEmployees();
+    fetch('/api/settings').then((r) => r.json()).then((s) => setStoreName(s.store_name));
+  }, [loadEmployees]);
 
   async function handleAddEmployee(e) {
     e.preventDefault();
     if (!newEmpName.trim()) return;
     const res = await authFetch('/api/employees', { method: 'POST', body: JSON.stringify({ name: newEmpName.trim() }) });
     if (!res.ok) { alert((await res.json()).error); return; }
-    const emp = await res.json();
-    setEmployees((prev) => [...prev, emp].sort((a, b) => a.name.localeCompare(b.name)));
     setNewEmpName('');
+    loadEmployees();
   }
 
   async function handleRemoveEmployee(id) {
     if (!confirm('Remover este funcionário?')) return;
     await authFetch(`/api/employees/${id}`, { method: 'DELETE' });
-    setEmployees((prev) => prev.filter((e) => e.id !== id));
+    loadEmployees();
+  }
+
+  async function handleReactivateEmployee(id) {
+    await authFetch(`/api/employees/${id}`, { method: 'PATCH' });
+    loadEmployees();
   }
 
   async function handleSaveStoreName() {
@@ -509,11 +517,12 @@ function SettingsTab({ token }) {
     <div className="grid gap-6 lg:grid-cols-2">
       {/* Funcionários */}
       <Card title="Funcionários" icon={<IconUsers />} className="lg:col-span-2">
-        {employees.length === 0 ? (
-          <p className="text-sm text-slate-400 py-4">Nenhum funcionário cadastrado.</p>
+        {/* Ativos */}
+        {employees.filter((e) => e.active).length === 0 ? (
+          <p className="text-sm text-slate-400 py-2">Nenhum funcionário ativo.</p>
         ) : (
           <div className="mb-4 divide-y divide-slate-100 rounded-xl border border-slate-100 bg-slate-50/50">
-            {employees.map((emp) => (
+            {employees.filter((e) => e.active).map((emp) => (
               <div key={emp.id} className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white">{initials(emp.name)}</div>
@@ -524,6 +533,25 @@ function SettingsTab({ token }) {
             ))}
           </div>
         )}
+
+        {/* Inativos */}
+        {employees.filter((e) => !e.active).length > 0 && (
+          <div className="mb-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Inativos</p>
+            <div className="divide-y divide-slate-100 rounded-xl border border-slate-100 bg-slate-50/30">
+              {employees.filter((e) => !e.active).map((emp) => (
+                <div key={emp.id} className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-200 text-xs font-bold text-slate-400">{initials(emp.name)}</div>
+                    <span className="text-sm font-medium text-slate-400">{emp.name}</span>
+                  </div>
+                  <button onClick={() => handleReactivateEmployee(emp.id)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-50">Reativar</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleAddEmployee} className="flex gap-2">
           <input type="text" value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} placeholder="Nome do funcionário" className="input-style flex-1" />
           <button type="submit" className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700">Adicionar</button>

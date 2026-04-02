@@ -3,13 +3,19 @@ import db from '@/lib/db';
 import { verifyAuth } from '@/lib/auth';
 
 /**
- * GET /api/employees
- * Retorna todos os funcionários ativos com o status de hoje (Dentro/Fora).
- * Público — usado pela tela de seleção.
+ * GET /api/employees?include_inactive=true
+ * Retorna funcionários ativos (padrão) ou todos incluindo inativos.
+ * Público — usado pela tela de seleção e pelo painel admin.
  */
-export async function GET() {
+export async function GET(request) {
   try {
-    const employees = await db('employees').where('active', true).orderBy('name');
+    const { searchParams } = new URL(request.url);
+    const includeInactive = searchParams.get('include_inactive') === 'true';
+
+    const query = db('employees').orderBy('name');
+    if (!includeInactive) query.where('active', true);
+
+    const employees = await query;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -55,12 +61,6 @@ export async function POST(request) {
 
     return NextResponse.json(employee, { status: 201 });
   } catch (err) {
-    if (err.code === '23505') {
-      return NextResponse.json(
-        { error: 'Funcionário já cadastrado' },
-        { status: 409 },
-      );
-    }
     console.error('Erro ao cadastrar funcionário:', err);
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
   }

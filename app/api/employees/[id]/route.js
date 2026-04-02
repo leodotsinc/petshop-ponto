@@ -3,6 +3,37 @@ import db from '@/lib/db';
 import { verifyAuth } from '@/lib/auth';
 
 /**
+ * PATCH /api/employees/:id
+ * Reativa um funcionário inativo. Requer autenticação admin.
+ */
+export async function PATCH(request, { params }) {
+  try {
+    const auth = verifyAuth(request);
+    if (!auth) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
+    const { id } = await params;
+
+    const updated = await db('employees')
+      .where('id', id)
+      .update({ active: true });
+
+    if (!updated) {
+      return NextResponse.json(
+        { error: 'Funcionário não encontrado' },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('Erro ao reativar funcionário:', err);
+    return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
+  }
+}
+
+/**
  * DELETE /api/employees/:id
  * Desativa um funcionário (soft delete). Requer autenticação admin.
  */
