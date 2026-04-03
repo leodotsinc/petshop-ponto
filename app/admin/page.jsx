@@ -31,17 +31,17 @@ export default function AdminPage() {
   ];
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex h-screen overflow-hidden bg-slate-50">
       {/* ── Sidebar ── */}
-      <aside className="hidden lg:flex w-64 flex-col border-r border-slate-200 bg-white">
-        <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5">
+      <aside className="hidden lg:flex w-64 flex-col border-r border-slate-200 bg-white h-screen">
+        <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5 shrink-0">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-sm font-bold text-white shadow-md shadow-emerald-500/20">P</div>
           <div>
             <p className="text-sm font-bold text-slate-800">Ponto Digital</p>
             <p className="text-xs text-slate-400">Painel Admin</p>
           </div>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {TABS.map((t) => (
             <button key={t.id} onClick={() => handleTabChange(t.id)} className={`flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
               tab === t.id ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
@@ -51,7 +51,7 @@ export default function AdminPage() {
             </button>
           ))}
         </nav>
-        <div className="border-t border-slate-100 px-3 py-3 space-y-1">
+        <div className="border-t border-slate-100 px-3 py-3 space-y-1 shrink-0">
           <Link href="/" className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700">
             <IconBack /> Voltar ao ponto
           </Link>
@@ -62,9 +62,9 @@ export default function AdminPage() {
       </aside>
 
       {/* ── Main ── */}
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col min-w-0 h-screen">
         {/* Mobile header */}
-        <header className="lg:hidden flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+        <header className="lg:hidden flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shrink-0">
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white">P</div>
             <span className="text-sm font-bold text-slate-800">Admin</span>
@@ -76,7 +76,7 @@ export default function AdminPage() {
         </header>
 
         {/* Mobile tabs */}
-        <div className="lg:hidden flex border-b border-slate-200 bg-white px-2">
+        <div className="lg:hidden flex border-b border-slate-200 bg-white px-2 shrink-0">
           {TABS.map((t) => (
             <button key={t.id} onClick={() => handleTabChange(t.id)} className={`flex-1 py-3 text-center text-xs font-semibold transition-colors border-b-2 ${
               tab === t.id ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-400'
@@ -534,12 +534,25 @@ function SettingsTab({ token }) {
     setTimeout(() => setPassMsg({ type: '', text: '' }), 3000);
   }
 
+  const [clearModal, setClearModal] = useState({ open: false, password: '', loading: false, error: '' });
+
   async function handleClearRecords() {
-    if (!confirm('⚠️ Apagar TODOS os registros?')) return;
-    if (!confirm('Confirmar: todos os dados serão perdidos.')) return;
-    const res = await authFetch('/api/records/clear', { method: 'DELETE' });
+    if (!clearModal.password) {
+      setClearModal((prev) => ({ ...prev, error: 'Digite sua senha para confirmar.' }));
+      return;
+    }
+    setClearModal((prev) => ({ ...prev, loading: true, error: '' }));
+    const res = await authFetch('/api/records/clear', {
+      method: 'DELETE',
+      body: JSON.stringify({ password: clearModal.password }),
+    });
     const data = await res.json();
-    alert(`${data.deleted} registro(s) apagado(s).`);
+    if (!res.ok) {
+      setClearModal((prev) => ({ ...prev, loading: false, error: data.error || 'Erro ao apagar.' }));
+      return;
+    }
+    setClearModal({ open: false, password: '', loading: false, error: '' });
+    alert(`${data.deleted} registro(s) apagado(s). Funcionários mantidos.`);
   }
 
   return (
@@ -652,9 +665,50 @@ function SettingsTab({ token }) {
 
       {/* Danger zone */}
       <Card title="Zona de Perigo" icon={<IconTrash />} danger className="lg:col-span-2">
-        <p className="text-sm text-slate-400 mb-4">Apaga permanentemente todos os registros. Faça um backup antes!</p>
-        <button onClick={handleClearRecords} className="rounded-xl bg-red-50 px-5 py-2.5 text-sm font-bold text-red-600 ring-1 ring-inset ring-red-200 transition hover:bg-red-100">
-          Apagar Todos os Registros
+        {clearModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                  <IconTrash />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-800">Zerar todos os registros</p>
+                  <p className="text-xs text-slate-400">Funcionários serão mantidos</p>
+                </div>
+              </div>
+              <div className="mb-4 rounded-xl bg-red-50 p-3 text-xs text-red-700 ring-1 ring-inset ring-red-200">
+                ⚠️ Todos os registros de ponto de <strong>todos os funcionários</strong> serão apagados permanentemente. Os funcionários cadastrados continuam intactos.
+              </div>
+              <div className="mb-4">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Confirme sua senha de admin</label>
+                <input
+                  type="password"
+                  value={clearModal.password}
+                  onChange={(e) => setClearModal((prev) => ({ ...prev, password: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleClearRecords()}
+                  placeholder="••••••••"
+                  autoFocus
+                  className="input-style"
+                />
+                {clearModal.error && <p className="mt-2 text-xs font-semibold text-red-600">{clearModal.error}</p>}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setClearModal({ open: false, password: '', loading: false, error: '' })} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                  Cancelar
+                </button>
+                <button onClick={handleClearRecords} disabled={clearModal.loading} className="flex-1 rounded-xl bg-red-600 py-2.5 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-50">
+                  {clearModal.loading ? 'Apagando...' : 'Zerar tudo'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        <p className="text-sm text-slate-400 mb-4">
+          Apaga todos os registros de ponto mantendo os funcionários cadastrados. Útil para virada de ano ou limpar dados de teste.
+        </p>
+        <button onClick={() => setClearModal({ open: true, password: '', loading: false, error: '' })} className="rounded-xl bg-red-50 px-5 py-2.5 text-sm font-bold text-red-600 ring-1 ring-inset ring-red-200 transition hover:bg-red-100">
+          Zerar Registros
         </button>
       </Card>
     </div>
