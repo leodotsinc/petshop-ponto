@@ -5,7 +5,8 @@ import bcrypt from 'bcryptjs';
 
 /**
  * PATCH /api/employees/:id
- * Reativa um funcionário inativo. Requer autenticação admin.
+ * Reativa um funcionário e/ou altera o PIN. Requer autenticação admin.
+ * Body: { reactivate?: boolean, pin?: string }
  */
 export async function PATCH(request, { params }) {
   try {
@@ -15,21 +16,32 @@ export async function PATCH(request, { params }) {
     }
 
     const { id } = await params;
+    const body = await request.json().catch(() => ({}));
+    const updates = {};
 
-    const updated = await db('employees')
-      .where('id', id)
-      .update({ active: true });
+    if (body.reactivate) {
+      updates.active = true;
+    }
 
+    if (body.pin) {
+      if (body.pin.length < 4 || body.pin.length > 8) {
+        return NextResponse.json({ error: 'PIN deve ter de 4 a 8 dígitos' }, { status: 400 });
+      }
+      updates.pin_hash = await bcrypt.hash(body.pin, 10);
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json({ error: 'Nenhuma alteração informada' }, { status: 400 });
+    }
+
+    const updated = await db('employees').where('id', id).update(updates);
     if (!updated) {
-      return NextResponse.json(
-        { error: 'Funcionário não encontrado' },
-        { status: 404 },
-      );
+      return NextResponse.json({ error: 'Funcionário não encontrado' }, { status: 404 });
     }
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error('Erro ao reativar funcionário:', err);
+    console.error('Erro ao atualizar funcionário:', err);
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
   }
 }

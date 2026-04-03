@@ -452,6 +452,7 @@ function ReportTab({ token }) {
 function SettingsTab({ token }) {
   const [employees, setEmployees] = useState([]);
   const [newEmpName, setNewEmpName] = useState('');
+  const [newEmpPin, setNewEmpPin] = useState('');
   const [storeName, setStoreName] = useState('');
   const [storeMsg, setStoreMsg] = useState('');
   const [newPass, setNewPass] = useState('');
@@ -473,10 +474,46 @@ function SettingsTab({ token }) {
   async function handleAddEmployee(e) {
     e.preventDefault();
     if (!newEmpName.trim()) return;
-    const res = await authFetch('/api/employees', { method: 'POST', body: JSON.stringify({ name: newEmpName.trim() }) });
+    if (!newEmpPin || newEmpPin.length < 4 || newEmpPin.length > 8) {
+      alert('PIN deve ter entre 4 e 8 dígitos.');
+      return;
+    }
+    const res = await authFetch('/api/employees', { method: 'POST', body: JSON.stringify({ name: newEmpName.trim(), pin: newEmpPin }) });
     if (!res.ok) { alert((await res.json()).error); return; }
     setNewEmpName('');
+    setNewEmpPin('');
     loadEmployees();
+  }
+
+  const [pinModal, setPinModal] = useState({ open: false, employee: null, pin: '', loading: false, error: '', success: false });
+
+  function openPinModal(emp) {
+    setPinModal({ open: true, employee: emp, pin: '', loading: false, error: '', success: false });
+  }
+
+  function closePinModal() {
+    setPinModal({ open: false, employee: null, pin: '', loading: false, error: '', success: false });
+  }
+
+  async function handleUpdatePin() {
+    const { pin, employee } = pinModal;
+    if (!pin || pin.length < 4 || pin.length > 8) {
+      setPinModal((prev) => ({ ...prev, error: 'PIN deve ter entre 4 e 8 dígitos.' }));
+      return;
+    }
+    setPinModal((prev) => ({ ...prev, loading: true, error: '' }));
+    const res = await authFetch(`/api/employees/${employee.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pin }),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      setPinModal((prev) => ({ ...prev, loading: false, error: data.error || 'Erro ao atualizar PIN.' }));
+      return;
+    }
+    setPinModal((prev) => ({ ...prev, loading: false, success: true }));
+    loadEmployees();
+    setTimeout(closePinModal, 1500);
   }
 
   async function handleRemoveEmployee(id) {
@@ -486,7 +523,7 @@ function SettingsTab({ token }) {
   }
 
   async function handleReactivateEmployee(id) {
-    await authFetch(`/api/employees/${id}`, { method: 'PATCH' });
+    await authFetch(`/api/employees/${id}`, { method: 'PATCH', body: JSON.stringify({ reactivate: true }) });
     loadEmployees();
   }
 
@@ -526,7 +563,7 @@ function SettingsTab({ token }) {
   }
 
   async function handleChangePassword() {
-    if (newPass.length < 4) { setPassMsg({ type: 'error', text: 'Mínimo 4 caracteres.' }); return; }
+    if (newPass.length < 8) { setPassMsg({ type: 'error', text: 'Mínimo 8 caracteres.' }); return; }
     if (newPass !== confirmPass) { setPassMsg({ type: 'error', text: 'As senhas não coincidem.' }); return; }
     await authFetch('/api/settings', { method: 'PUT', body: JSON.stringify({ new_password: newPass }) });
     setNewPass(''); setConfirmPass('');
@@ -568,9 +605,19 @@ function SettingsTab({ token }) {
               <div key={emp.id} className="flex items-center justify-between px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white">{initials(emp.name)}</div>
-                  <span className="text-sm font-medium text-slate-700">{emp.name}</span>
+                  <div>
+                    <span className="text-sm font-medium text-slate-700">{emp.name}</span>
+                    <span className={`ml-2 text-xs font-medium ${emp.hasPin ? 'text-emerald-500' : 'text-amber-500'}`}>
+                      {emp.hasPin ? 'PIN ativo' : 'Sem PIN'}
+                    </span>
+                  </div>
                 </div>
-                <button onClick={() => handleRemoveEmployee(emp.id)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-500 transition hover:bg-red-50">Remover</button>
+                <div className="flex gap-2">
+                  <button onClick={() => openPinModal(emp)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-blue-600 transition hover:bg-blue-50">
+                    {emp.hasPin ? 'Alterar PIN' : 'Definir PIN'}
+                  </button>
+                  <button onClick={() => handleRemoveEmployee(emp.id)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-500 transition hover:bg-red-50">Remover</button>
+                </div>
               </div>
             ))}
           </div>
@@ -617,6 +664,55 @@ function SettingsTab({ token }) {
           </div>
         )}
 
+        {/* Modal de alterar PIN */}
+        {pinModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">
+                  <IconKey />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-800">{pinModal.employee?.hasPin ? 'Alterar PIN' : 'Definir PIN'}</p>
+                  <p className="text-xs text-slate-400">{pinModal.employee?.name}</p>
+                </div>
+              </div>
+              {pinModal.success ? (
+                <div className="rounded-xl bg-emerald-50 p-4 text-center text-sm font-semibold text-emerald-700">
+                  PIN atualizado com sucesso!
+                </div>
+              ) : (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1.5">Novo PIN (4-8 dígitos)</label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={8}
+                      value={pinModal.pin}
+                      onChange={(e) => setPinModal((prev) => ({ ...prev, pin: e.target.value.replace(/\D/g, ''), error: '' }))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleUpdatePin()}
+                      placeholder="••••"
+                      autoFocus
+                      className="input-style text-center tracking-[0.3em]"
+                    />
+                    {pinModal.error && <p className="mt-2 text-xs font-semibold text-red-600">{pinModal.error}</p>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={closePinModal} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                      Cancelar
+                    </button>
+                    <button onClick={handleUpdatePin} disabled={pinModal.loading} className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-50">
+                      {pinModal.loading ? 'Salvando...' : 'Salvar PIN'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Inativos */}
         {employees.filter((e) => !e.active).length > 0 && (
           <div className="mb-4">
@@ -638,8 +734,18 @@ function SettingsTab({ token }) {
           </div>
         )}
 
-        <form onSubmit={handleAddEmployee} className="flex gap-2">
-          <input type="text" value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} placeholder="Nome do funcionário" className="input-style flex-1" />
+        <form onSubmit={handleAddEmployee} className="flex flex-wrap gap-2">
+          <input type="text" value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} placeholder="Nome do funcionário" className="input-style flex-1 min-w-[140px]" />
+          <input
+            type="password"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={8}
+            value={newEmpPin}
+            onChange={(e) => setNewEmpPin(e.target.value.replace(/\D/g, ''))}
+            placeholder="PIN (4-8 dígitos)"
+            className="input-style w-40"
+          />
           <button type="submit" className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700">Adicionar</button>
         </form>
       </Card>
@@ -656,7 +762,7 @@ function SettingsTab({ token }) {
       {/* Senha */}
       <Card title="Alterar Senha" icon={<IconKey />}>
         <div className="space-y-3">
-          <Field label="Nova senha"><input type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="Mín. 4 caracteres" className="input-style" /></Field>
+          <Field label="Nova senha"><input type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} placeholder="Mín. 8 caracteres" className="input-style" /></Field>
           <Field label="Confirmar"><input type="password" value={confirmPass} onChange={(e) => setConfirmPass(e.target.value)} placeholder="Repita a senha" className="input-style" /></Field>
         </div>
         <button onClick={handleChangePassword} className="mt-4 rounded-xl bg-slate-100 px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-200">Alterar Senha</button>

@@ -2,9 +2,22 @@ import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { rateLimit } from '@/lib/rate-limit';
 
 export async function POST(request) {
   try {
+    // Rate limit por IP — 5 tentativas a cada 15 min
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')
+      || 'unknown';
+    const rl = rateLimit(`auth:${ip}`);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: `Muitas tentativas. Tente novamente em ${Math.ceil(rl.retryAfter / 60)} minutos.` },
+        { status: 429 },
+      );
+    }
+
     const { password } = await request.json();
 
     if (!password) {
@@ -22,6 +35,7 @@ export async function POST(request) {
     }
 
     const token = jwt.sign({ role: 'admin' }, process.env.JWT_SECRET, {
+      algorithm: 'HS256',
       expiresIn: '24h',
     });
 

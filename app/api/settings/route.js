@@ -42,13 +42,13 @@ export async function PUT(request) {
     }
 
     if (new_password) {
-      if (new_password.length < 4) {
+      if (new_password.length < 8) {
         return NextResponse.json(
-          { error: 'Senha deve ter ao menos 4 caracteres' },
+          { error: 'Senha deve ter ao menos 8 caracteres' },
           { status: 400 },
         );
       }
-      const hash = await bcrypt.hash(new_password, 10);
+      const hash = await bcrypt.hash(new_password, 12);
       await db('settings')
         .where('key', 'admin_password')
         .update({ value: hash });

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import { verifyAuth } from '@/lib/auth';
+import bcrypt from 'bcryptjs';
 
 /**
  * GET /api/employees?include_inactive=true
@@ -32,7 +33,13 @@ export async function GET(request) {
         !lastRecord || lastRecord.type === 'saida' ? 'entrada' : 'saida';
     }
 
-    return NextResponse.json(employees);
+    // Remove campos sensíveis do retorno público
+    const safe = employees.map(({ pin_hash, ...rest }) => ({
+      ...rest,
+      hasPin: !!pin_hash,
+    }));
+
+    return NextResponse.json(safe);
   } catch (err) {
     console.error('Erro ao listar funcionários:', err);
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
@@ -50,14 +57,23 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const { name } = await request.json();
+    const { name, pin } = await request.json();
+
     if (!name?.trim()) {
       return NextResponse.json({ error: 'Nome é obrigatório' }, { status: 400 });
     }
+    if (name.trim().length > 100) {
+      return NextResponse.json({ error: 'Nome muito longo (máx. 100 caracteres)' }, { status: 400 });
+    }
+    if (!pin || pin.length < 4 || pin.length > 8) {
+      return NextResponse.json({ error: 'PIN obrigatório (4 a 8 dígitos)' }, { status: 400 });
+    }
+
+    const pin_hash = await bcrypt.hash(pin, 10);
 
     const [employee] = await db('employees')
-      .insert({ name: name.trim() })
-      .returning('*');
+      .insert({ name: name.trim(), pin_hash })
+      .returning(['id', 'name', 'active', 'created_at']);
 
     return NextResponse.json(employee, { status: 201 });
   } catch (err) {
