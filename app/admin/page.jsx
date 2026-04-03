@@ -404,6 +404,43 @@ function RecordsTab({ token }) {
   );
 }
 
+/**
+ * Agrupa registros por dia e retorna uma linha por dia para o PDF.
+ * Formato: [ data, entradas, saídas, total do dia ]
+ * Ex: [ "seg, 01/04/2025", "08:00 / 13:30", "12:00 / 18:00", "8h30" ]
+ */
+function buildDayTable(records) {
+  const sorted = [...records].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const byDay = {};
+  for (const r of sorted) {
+    const d = new Date(r.timestamp);
+    const key = d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+    if (!byDay[key]) byDay[key] = { entradas: [], saidas: [] };
+    const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    if (r.type === 'entrada') byDay[key].entradas.push(time);
+    else byDay[key].saidas.push(time);
+  }
+
+  return Object.entries(byDay).map(([day, { entradas, saidas }]) => {
+    // Calcular total do dia emparelhando entradas e saídas
+    let dayMinutes = 0;
+    const pairs = Math.min(entradas.length, saidas.length);
+    for (let i = 0; i < pairs; i++) {
+      const [eh, em] = entradas[i].split(':').map(Number);
+      const [sh, sm] = saidas[i].split(':').map(Number);
+      const mins = (sh * 60 + sm) - (eh * 60 + em);
+      if (mins > 0) dayMinutes += mins;
+    }
+    const dayTotal = dayMinutes > 0 ? formatMinutes(dayMinutes) : '—';
+    return [
+      day,
+      entradas.join(' / ') || '—',
+      saidas.join(' / ') || '—',
+      dayTotal,
+    ];
+  });
+}
+
 /* ═══════════ TAB: RELATÓRIO ═══════════ */
 
 function ReportTab({ token }) {
@@ -455,33 +492,30 @@ function ReportTab({ token }) {
         if (y > 220) { doc.addPage(); y = 18; }
         doc.setFontSize(12); doc.setTextColor(46, 125, 50); doc.text(name, 14, y); y += 2;
 
-        const { totalMinutes, pairs } = calcWorkedHours(recs);
+        const { totalMinutes } = calcWorkedHours(recs);
         const balance = totalMinutes - expectedMinutes;
         summaryData.push({ name, totalMinutes, expectedMinutes, balance });
 
         autoTable(doc, {
           startY: y,
-          head: [['Data', 'Horário', 'Tipo']],
-          body: [...recs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).map((r) => {
-            const d = new Date(r.timestamp);
-            return [
-              d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }),
-              d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-              r.type === 'entrada' ? 'Entrada' : 'Saída',
-            ];
-          }),
+          head: [['Data', 'Entradas', 'Saídas', 'Total Dia']],
+          body: buildDayTable(recs),
           theme: 'striped',
           headStyles: { fillColor: [46, 125, 50], textColor: 255, fontSize: 9 },
           bodyStyles: { fontSize: 9 },
+          columnStyles: { 3: { halign: 'center', fontStyle: 'bold' } },
           margin: { left: 14, right: 14 },
         });
         y = doc.lastAutoTable.finalY + 4;
         doc.setFontSize(9); doc.setTextColor(80);
-        doc.text(`Trabalhadas: ${formatMinutes(totalMinutes)}  |  Esperado: ${formatMinutes(expectedMinutes)}  |  Saldo: ${balance >= 0 ? '+' : ''}${formatMinutes(balance)}`, 14, y);
+        doc.text(
+          `Trabalhadas: ${formatMinutes(totalMinutes)}  |  Esperado: ${formatMinutes(expectedMinutes)}  |  Saldo: ${balance >= 0 ? '+' : ''}${formatMinutes(balance)}`,
+          14, y,
+        );
         y += 14;
       });
 
-      // Tabela resumo de todos os funcionários
+      // Tabela resumo geral (quando mais de 1 funcionário)
       if (Object.keys(byEmp).length > 1) {
         if (y > 210) { doc.addPage(); y = 18; }
         doc.setFontSize(12); doc.setTextColor(46, 125, 50); doc.text('Resumo Geral', 14, y); y += 2;
@@ -504,17 +538,16 @@ function ReportTab({ token }) {
         y = doc.lastAutoTable.finalY + 14;
       }
 
-      // Assinaturas
-      if (y > 245) { doc.addPage(); y = 30; }
+      // Assinatura — apenas funcionário
+      if (y > 250) { doc.addPage(); y = 30; }
       const sigY = y + 12;
       doc.setDrawColor(160); doc.setLineWidth(0.3);
-      doc.line(14, sigY, 90, sigY);
-      doc.line(pw - 90, sigY, pw - 14, sigY);
+      const sigMid = pw / 2;
+      doc.line(sigMid - 50, sigY, sigMid + 50, sigY);
       doc.setFontSize(9); doc.setTextColor(100);
-      doc.text('Empregador', 14, sigY + 5);
-      doc.text('Funcionário', pw - 90, sigY + 5);
+      doc.text('Funcionário', sigMid, sigY + 5, { align: 'center' });
       doc.setFontSize(8); doc.setTextColor(150);
-      doc.text(storeName, 14, sigY + 10);
+      doc.text(storeName, sigMid, sigY + 10, { align: 'center' });
 
       const pages = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(160); doc.text(`${storeName} — Pág. ${i}/${pages}`, 14, 288); }
@@ -1124,48 +1157,10 @@ function EmployeeDetailView({ token, employee, onBack }) {
       doc.setFontSize(10); doc.setTextColor(100); doc.text(`${MN[month - 1]} de ${year}`, 14, 40);
       doc.setFontSize(8); doc.setTextColor(150); doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 47);
 
-      // Tabela de registros agrupados por dia com horas calculadas
-      const { pairs } = calcWorkedHours(records);
-
-      // Agrupar por dia
-      const byDay = {};
-      const sorted = [...records].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-      for (const r of sorted) {
-        const dayKey = new Date(r.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        if (!byDay[dayKey]) byDay[dayKey] = [];
-        byDay[dayKey].push(r);
-      }
-
-      // Montar linhas da tabela: cada registro + subtotal por dia
-      const tableBody = [];
-      Object.entries(byDay).forEach(([day, dayRecs]) => {
-        const dayPairs = [];
-        let open = null;
-        for (const r of dayRecs) {
-          if (r.type === 'entrada') { open = r; }
-          else if (r.type === 'saida' && open) {
-            const mins = (new Date(r.timestamp) - new Date(open.timestamp)) / 60000;
-            if (mins > 0 && mins < 1440) dayPairs.push(mins);
-            open = null;
-          }
-        }
-        const dayTotal = dayPairs.reduce((a, b) => a + b, 0);
-
-        dayRecs.forEach((r, i) => {
-          const d = new Date(r.timestamp);
-          tableBody.push([
-            i === 0 ? day : '',
-            d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-            r.type === 'entrada' ? 'Entrada' : 'Saída',
-            i === dayRecs.length - 1 ? formatMinutes(dayTotal) : '',
-          ]);
-        });
-      });
-
       autoTable(doc, {
         startY: 55,
-        head: [['Data', 'Horário', 'Tipo', 'Horas Dia']],
-        body: tableBody,
+        head: [['Data', 'Entradas', 'Saídas', 'Total Dia']],
+        body: buildDayTable(records),
         theme: 'striped',
         headStyles: { fillColor: [46, 125, 50], textColor: 255, fontSize: 9 },
         bodyStyles: { fontSize: 9 },
@@ -1196,21 +1191,16 @@ function EmployeeDetailView({ token, employee, onBack }) {
       doc.text(`${balance >= 0 ? '+' : ''}${formatMinutes(balance)}`, 80, y);
       doc.setFont(undefined, 'normal'); y += 16;
 
-      // Assinatura
-      if (y > 245) { doc.addPage(); y = 30; }
-      doc.setDrawColor(160); doc.setLineWidth(0.3);
-
+      // Assinatura — apenas funcionário, centralizada
+      if (y > 250) { doc.addPage(); y = 30; }
       const sigY = y + 12;
-      doc.line(14, sigY, 90, sigY);
-      doc.line(pw - 90, sigY, pw - 14, sigY);
-
+      const sigMid = pw / 2;
+      doc.setDrawColor(160); doc.setLineWidth(0.3);
+      doc.line(sigMid - 50, sigY, sigMid + 50, sigY);
       doc.setFontSize(9); doc.setTextColor(100);
-      doc.text('Empregador', 14, sigY + 5);
-      doc.text('Funcionário', pw - 90, sigY + 5);
-
+      doc.text('Funcionário', sigMid, sigY + 5, { align: 'center' });
       doc.setFontSize(8); doc.setTextColor(150);
-      doc.text(storeName, 14, sigY + 10);
-      doc.text(employee.name, pw - 90, sigY + 10);
+      doc.text(employee.name, sigMid, sigY + 10, { align: 'center' });
 
       // Rodapé com paginação
       const pages = doc.internal.getNumberOfPages();
