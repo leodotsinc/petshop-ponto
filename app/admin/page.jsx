@@ -199,13 +199,33 @@ function calcWorkedHours(records) {
 }
 
 /**
- * Calcula as horas mensais esperadas baseado na carga horária semanal.
- * Fórmula CLT: horas semanais × 5 semanas = horas mensais.
- * Ex: 44h/semana × 5 = 220h/mês (padrão CLT).
- * O parâmetro yearMonth é mantido para futuras customizações.
+ * Calcula as horas esperadas de forma proporcional:
+ * - Mês atual → proporcional aos dias já decorridos até hoje
+ * - Mês passado → mês inteiro (já fechou)
+ * - Mês futuro → 0
+ *
+ * Taxa diária = weeklyHours / 7 (média diária incluindo fins de semana).
  */
-function calcExpectedMonthlyMinutes(_yearMonth, weeklyHours) {
-  return weeklyHours * 5 * 60; // horas semanais × 5 semanas × 60 minutos
+function calcExpectedMonthlyMinutes(yearMonth, weeklyHours) {
+  const [year, month] = yearMonth.split('-').map(Number);
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+
+  let days;
+  if (year === curYear && month === curMonth) {
+    // Mês atual: conta até hoje (inclusive)
+    days = now.getDate();
+  } else if (year < curYear || (year === curYear && month < curMonth)) {
+    // Mês passado: mês completo
+    days = new Date(year, month, 0).getDate();
+  } else {
+    // Mês futuro
+    days = 0;
+  }
+
+  const dailyMinutes = (weeklyHours / 7) * 60;
+  return dailyMinutes * days;
 }
 
 function formatMinutes(totalMinutes) {
