@@ -167,6 +167,55 @@ function LoginScreen({ onLogin }) {
   );
 }
 
+/* ═══════════ CÁLCULO DE HORAS ═══════════ */
+
+/**
+ * Calcula as horas trabalhadas a partir de um array de registros.
+ * Emparelha entrada→saída sequencialmente e soma os intervalos.
+ * Retorna { totalMinutes, pairs: [{ entrada, saida, minutes }], openEntry }
+ */
+function calcWorkedHours(records) {
+  // Ordena por timestamp crescente
+  const sorted = [...records].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const pairs = [];
+  let openEntry = null;
+
+  for (const r of sorted) {
+    if (r.type === 'entrada') {
+      openEntry = r;
+    } else if (r.type === 'saida' && openEntry) {
+      const entradaTime = new Date(openEntry.timestamp);
+      const saidaTime = new Date(r.timestamp);
+      const minutes = (saidaTime - entradaTime) / 60000;
+      if (minutes > 0 && minutes < 1440) { // Ignora pares inválidos (> 24h)
+        pairs.push({ entrada: openEntry, saida: r, minutes });
+      }
+      openEntry = null;
+    }
+  }
+
+  const totalMinutes = pairs.reduce((acc, p) => acc + p.minutes, 0);
+  return { totalMinutes, pairs, openEntry };
+}
+
+/**
+ * Calcula as horas mensais esperadas baseado na carga horária semanal.
+ * Fórmula CLT: horas semanais × 5 semanas = horas mensais.
+ * Ex: 44h/semana × 5 = 220h/mês (padrão CLT).
+ * O parâmetro yearMonth é mantido para futuras customizações.
+ */
+function calcExpectedMonthlyMinutes(_yearMonth, weeklyHours) {
+  return weeklyHours * 5 * 60; // horas semanais × 5 semanas × 60 minutos
+}
+
+function formatMinutes(totalMinutes) {
+  const sign = totalMinutes < 0 ? '-' : '';
+  const abs = Math.abs(Math.round(totalMinutes));
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return `${sign}${h}h${String(m).padStart(2, '0')}`;
+}
+
 /* ═══════════ TAB: REGISTROS (painel do dia) ═══════════ */
 
 function RecordsTab({ token }) {
@@ -343,12 +392,16 @@ function ReportTab({ token }) {
   const [pdfMonth, setPdfMonth] = useState('');
   const [generating, setGenerating] = useState(false);
   const [storeName, setStoreName] = useState('Pet Patas');
+  const [weeklyHours, setWeeklyHours] = useState(44);
 
   useEffect(() => {
     const now = new Date();
     setPdfMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
     fetch('/api/employees').then((r) => r.json()).then(setEmployees);
-    fetch('/api/settings').then((r) => r.json()).then((s) => setStoreName(s.store_name));
+    fetch('/api/settings').then((r) => r.json()).then((s) => {
+      setStoreName(s.store_name);
+      setWeeklyHours(s.weekly_hours || 44);
+    });
   }, []);
 
   async function handleGeneratePDF() {
@@ -365,22 +418,31 @@ function ReportTab({ token }) {
       const doc = new jsPDF();
       const [year, month] = pdfMonth.split('-').map(Number);
       const MN = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+      const pw = doc.internal.pageSize.getWidth();
+      const expectedMinutes = calcExpectedMonthlyMinutes(pdfMonth, weeklyHours);
 
       doc.setFontSize(20); doc.setTextColor(46, 125, 50); doc.text(storeName, 14, 22);
       doc.setFontSize(13); doc.setTextColor(80); doc.text(`Relatório de Ponto — ${MN[month-1]} de ${year}`, 14, 32);
-      doc.setFontSize(8); doc.setTextColor(150); doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 39);
+      doc.setFontSize(8); doc.setTextColor(150); doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}  |  Carga: ${weeklyHours}h/semana`, 14, 39);
 
       const byEmp = {};
       records.forEach((r) => { (byEmp[r.employee_name] = byEmp[r.employee_name] || []).push(r); });
       let y = 48;
 
+      const summaryData = [];
+
       Object.entries(byEmp).forEach(([name, recs]) => {
-        if (y > 240) { doc.addPage(); y = 18; }
+        if (y > 220) { doc.addPage(); y = 18; }
         doc.setFontSize(12); doc.setTextColor(46, 125, 50); doc.text(name, 14, y); y += 2;
+
+        const { totalMinutes, pairs } = calcWorkedHours(recs);
+        const balance = totalMinutes - expectedMinutes;
+        summaryData.push({ name, totalMinutes, expectedMinutes, balance });
+
         autoTable(doc, {
           startY: y,
           head: [['Data', 'Horário', 'Tipo']],
-          body: recs.map((r) => {
+          body: [...recs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).map((r) => {
             const d = new Date(r.timestamp);
             return [
               d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }),
@@ -389,17 +451,50 @@ function ReportTab({ token }) {
             ];
           }),
           theme: 'striped',
-          headStyles: { fillColor: [46, 125, 50], textColor: 255, fontSize: 10 },
-          bodyStyles: { fontSize: 10 },
+          headStyles: { fillColor: [46, 125, 50], textColor: 255, fontSize: 9 },
+          bodyStyles: { fontSize: 9 },
           margin: { left: 14, right: 14 },
         });
-        y = doc.lastAutoTable.finalY + 6;
-        const e = recs.filter((r) => r.type === 'entrada').length;
-        const s = recs.filter((r) => r.type === 'saida').length;
-        doc.setFontSize(9); doc.setTextColor(100);
-        doc.text(`Total: ${e} entrada${e !== 1 ? 's' : ''}, ${s} saída${s !== 1 ? 's' : ''}`, 14, y);
+        y = doc.lastAutoTable.finalY + 4;
+        doc.setFontSize(9); doc.setTextColor(80);
+        doc.text(`Trabalhadas: ${formatMinutes(totalMinutes)}  |  Esperado: ${formatMinutes(expectedMinutes)}  |  Saldo: ${balance >= 0 ? '+' : ''}${formatMinutes(balance)}`, 14, y);
         y += 14;
       });
+
+      // Tabela resumo de todos os funcionários
+      if (Object.keys(byEmp).length > 1) {
+        if (y > 210) { doc.addPage(); y = 18; }
+        doc.setFontSize(12); doc.setTextColor(46, 125, 50); doc.text('Resumo Geral', 14, y); y += 2;
+
+        autoTable(doc, {
+          startY: y,
+          head: [['Funcionário', 'Trabalhadas', 'Esperado', 'Saldo']],
+          body: summaryData.map((s) => [
+            s.name,
+            formatMinutes(s.totalMinutes),
+            formatMinutes(s.expectedMinutes),
+            `${s.balance >= 0 ? '+' : ''}${formatMinutes(s.balance)}`,
+          ]),
+          theme: 'striped',
+          headStyles: { fillColor: [46, 125, 50], textColor: 255, fontSize: 10 },
+          bodyStyles: { fontSize: 10 },
+          columnStyles: { 3: { fontStyle: 'bold' } },
+          margin: { left: 14, right: 14 },
+        });
+        y = doc.lastAutoTable.finalY + 14;
+      }
+
+      // Assinaturas
+      if (y > 245) { doc.addPage(); y = 30; }
+      const sigY = y + 12;
+      doc.setDrawColor(160); doc.setLineWidth(0.3);
+      doc.line(14, sigY, 90, sigY);
+      doc.line(pw - 90, sigY, pw - 14, sigY);
+      doc.setFontSize(9); doc.setTextColor(100);
+      doc.text('Empregador', 14, sigY + 5);
+      doc.text('Funcionário', pw - 90, sigY + 5);
+      doc.setFontSize(8); doc.setTextColor(150);
+      doc.text(storeName, 14, sigY + 10);
 
       const pages = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(160); doc.text(`${storeName} — Pág. ${i}/${pages}`, 14, 288); }
@@ -455,6 +550,8 @@ function SettingsTab({ token }) {
   const [newEmpPin, setNewEmpPin] = useState('');
   const [storeName, setStoreName] = useState('');
   const [storeMsg, setStoreMsg] = useState('');
+  const [weeklyHours, setWeeklyHours] = useState(44);
+  const [hoursMsg, setHoursMsg] = useState('');
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [passMsg, setPassMsg] = useState({ type: '', text: '' });
@@ -463,12 +560,15 @@ function SettingsTab({ token }) {
     fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...opts.headers } }), [token]);
 
   const loadEmployees = useCallback(() => {
-    fetch('/api/employees?include_inactive=true').then((r) => r.json()).then(setEmployees);
+    authFetch('/api/employees?include_inactive=true').then((r) => r.json()).then(setEmployees);
   }, []);
 
   useEffect(() => {
     loadEmployees();
-    fetch('/api/settings').then((r) => r.json()).then((s) => setStoreName(s.store_name));
+    fetch('/api/settings').then((r) => r.json()).then((s) => {
+      setStoreName(s.store_name);
+      setWeeklyHours(s.weekly_hours || 44);
+    });
   }, [loadEmployees]);
 
   async function handleAddEmployee(e) {
@@ -560,6 +660,14 @@ function SettingsTab({ token }) {
     await authFetch('/api/settings', { method: 'PUT', body: JSON.stringify({ store_name: storeName }) });
     setStoreMsg('Salvo!');
     setTimeout(() => setStoreMsg(''), 2000);
+  }
+
+  async function handleSaveWeeklyHours() {
+    const h = parseFloat(weeklyHours);
+    if (isNaN(h) || h < 1 || h > 80) { setHoursMsg('Valor inválido (1-80h)'); setTimeout(() => setHoursMsg(''), 3000); return; }
+    await authFetch('/api/settings', { method: 'PUT', body: JSON.stringify({ weekly_hours: h }) });
+    setHoursMsg('Salvo!');
+    setTimeout(() => setHoursMsg(''), 2000);
   }
 
   async function handleChangePassword() {
@@ -759,6 +867,24 @@ function SettingsTab({ token }) {
         {storeMsg && <span className="ml-3 text-sm font-semibold text-emerald-600">{storeMsg}</span>}
       </Card>
 
+      {/* Carga Horária */}
+      <Card title="Carga Horária Semanal" icon={<IconClock />}>
+        <p className="text-xs text-slate-400 mb-3">Define o total de horas semanais esperado. Usado no cálculo de saldo de horas dos funcionários.</p>
+        <Field label="Horas por semana">
+          <input
+            type="number"
+            min={1}
+            max={80}
+            step={0.5}
+            value={weeklyHours}
+            onChange={(e) => setWeeklyHours(e.target.value)}
+            className="input-style"
+          />
+        </Field>
+        <button onClick={handleSaveWeeklyHours} className="mt-4 rounded-xl bg-slate-100 px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-200">Salvar</button>
+        {hoursMsg && <span className={`ml-3 text-sm font-semibold ${hoursMsg === 'Salvo!' ? 'text-emerald-600' : 'text-red-600'}`}>{hoursMsg}</span>}
+      </Card>
+
       {/* Senha */}
       <Card title="Alterar Senha" icon={<IconKey />}>
         <div className="space-y-3">
@@ -854,6 +980,7 @@ function IconLogout() { return <svg className="h-5 w-5" fill="none" viewBox="0 0
 function IconUsers() { return <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>; }
 function IconStore() { return <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 21v-7.5a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 .75.75V21m-4.5 0H2.36m11.14 0H18m0 0h3.64m-1.39 0V9.349M3.75 21V9.349m0 0a3.001 3.001 0 0 0 3.75-.615A2.993 2.993 0 0 0 9.75 9.75c.896 0 1.7-.393 2.25-1.016a2.993 2.993 0 0 0 2.25 1.016c.896 0 1.7-.393 2.25-1.015a3.001 3.001 0 0 0 3.75.614m-16.5 0a3.004 3.004 0 0 1-.621-4.72l1.189-1.19A1.5 1.5 0 0 1 5.378 3h13.243a1.5 1.5 0 0 1 1.06.44l1.19 1.189a3 3 0 0 1-.621 4.72M6.75 18h3.75a.75.75 0 0 0 .75-.75V13.5a.75.75 0 0 0-.75-.75H6.75a.75.75 0 0 0-.75.75v3.75c0 .414.336.75.75.75Z" /></svg>; }
 function IconKey() { return <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" /></svg>; }
+function IconClock() { return <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>; }
 function IconSave() { return <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0-3-3m3 3 3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" /></svg>; }
 function IconTrash() { return <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>; }
 function IconRefresh() { return <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>; }
@@ -926,12 +1053,16 @@ function EmployeeDetailView({ token, employee, onBack }) {
   const [photoModal, setPhotoModal] = useState({ open: false, loading: false, src: null });
   const [generating, setGenerating] = useState(false);
   const [storeName, setStoreName] = useState('Pet Patas');
+  const [weeklyHours, setWeeklyHours] = useState(44);
 
   const authFetch = useCallback((url) =>
     fetch(url, { headers: { Authorization: `Bearer ${token}` } }), [token]);
 
   useEffect(() => {
-    fetch('/api/settings').then((r) => r.json()).then((s) => setStoreName(s.store_name));
+    fetch('/api/settings').then((r) => r.json()).then((s) => {
+      setStoreName(s.store_name);
+      setWeeklyHours(s.weekly_hours || 44);
+    });
   }, []);
 
   useEffect(() => {
@@ -965,35 +1096,103 @@ function EmployeeDetailView({ token, employee, onBack }) {
       const doc = new jsPDF();
       const [year, month] = filterMonth.split('-').map(Number);
       const MN = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+      const pw = doc.internal.pageSize.getWidth();
 
+      // Header
       doc.setFontSize(20); doc.setTextColor(46, 125, 50); doc.text(storeName, 14, 22);
-      doc.setFontSize(13); doc.setTextColor(80); doc.text(`Relatório — ${employee.name}`, 14, 32);
+      doc.setFontSize(13); doc.setTextColor(80); doc.text(`Relatório de Ponto — ${employee.name}`, 14, 32);
       doc.setFontSize(10); doc.setTextColor(100); doc.text(`${MN[month - 1]} de ${year}`, 14, 40);
       doc.setFontSize(8); doc.setTextColor(150); doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 47);
 
-      autoTable(doc, {
-        startY: 55,
-        head: [['Data', 'Horário', 'Tipo']],
-        body: records.map((r) => {
+      // Tabela de registros agrupados por dia com horas calculadas
+      const { pairs } = calcWorkedHours(records);
+
+      // Agrupar por dia
+      const byDay = {};
+      const sorted = [...records].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      for (const r of sorted) {
+        const dayKey = new Date(r.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        if (!byDay[dayKey]) byDay[dayKey] = [];
+        byDay[dayKey].push(r);
+      }
+
+      // Montar linhas da tabela: cada registro + subtotal por dia
+      const tableBody = [];
+      Object.entries(byDay).forEach(([day, dayRecs]) => {
+        const dayPairs = [];
+        let open = null;
+        for (const r of dayRecs) {
+          if (r.type === 'entrada') { open = r; }
+          else if (r.type === 'saida' && open) {
+            const mins = (new Date(r.timestamp) - new Date(open.timestamp)) / 60000;
+            if (mins > 0 && mins < 1440) dayPairs.push(mins);
+            open = null;
+          }
+        }
+        const dayTotal = dayPairs.reduce((a, b) => a + b, 0);
+
+        dayRecs.forEach((r, i) => {
           const d = new Date(r.timestamp);
-          return [
-            d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }),
+          tableBody.push([
+            i === 0 ? day : '',
             d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             r.type === 'entrada' ? 'Entrada' : 'Saída',
-          ];
-        }),
+            i === dayRecs.length - 1 ? formatMinutes(dayTotal) : '',
+          ]);
+        });
+      });
+
+      autoTable(doc, {
+        startY: 55,
+        head: [['Data', 'Horário', 'Tipo', 'Horas Dia']],
+        body: tableBody,
         theme: 'striped',
-        headStyles: { fillColor: [46, 125, 50], textColor: 255, fontSize: 10 },
-        bodyStyles: { fontSize: 10 },
+        headStyles: { fillColor: [46, 125, 50], textColor: 255, fontSize: 9 },
+        bodyStyles: { fontSize: 9 },
+        columnStyles: { 3: { halign: 'center', fontStyle: 'bold' } },
         margin: { left: 14, right: 14 },
       });
 
-      const e = records.filter((r) => r.type === 'entrada').length;
-      const s = records.filter((r) => r.type === 'saida').length;
-      const finalY = doc.lastAutoTable.finalY + 6;
-      doc.setFontSize(9); doc.setTextColor(100);
-      doc.text(`Total: ${e} entrada${e !== 1 ? 's' : ''}, ${s} saída${s !== 1 ? 's' : ''}`, 14, finalY);
+      // Resumo de horas
+      let y = doc.lastAutoTable.finalY + 10;
+      if (y > 240) { doc.addPage(); y = 20; }
 
+      const worked = hoursData.totalMinutes;
+      const expected = expectedMinutes;
+      const balance = worked - expected;
+
+      doc.setFontSize(11); doc.setTextColor(46, 125, 50); doc.text('Resumo de Horas', 14, y); y += 8;
+
+      doc.setFontSize(10); doc.setTextColor(60);
+      doc.text(`Horas trabalhadas:`, 14, y);
+      doc.setFont(undefined, 'bold'); doc.text(formatMinutes(worked), 80, y); doc.setFont(undefined, 'normal'); y += 6;
+
+      doc.text(`Horas esperadas (${weeklyHours}h/semana):`, 14, y);
+      doc.setFont(undefined, 'bold'); doc.text(formatMinutes(expected), 80, y); doc.setFont(undefined, 'normal'); y += 6;
+
+      const balColor = balance >= 0 ? [46, 125, 50] : [220, 80, 20];
+      doc.text(`Saldo:`, 14, y);
+      doc.setFont(undefined, 'bold'); doc.setTextColor(...balColor);
+      doc.text(`${balance >= 0 ? '+' : ''}${formatMinutes(balance)}`, 80, y);
+      doc.setFont(undefined, 'normal'); y += 16;
+
+      // Assinatura
+      if (y > 245) { doc.addPage(); y = 30; }
+      doc.setDrawColor(160); doc.setLineWidth(0.3);
+
+      const sigY = y + 12;
+      doc.line(14, sigY, 90, sigY);
+      doc.line(pw - 90, sigY, pw - 14, sigY);
+
+      doc.setFontSize(9); doc.setTextColor(100);
+      doc.text('Empregador', 14, sigY + 5);
+      doc.text('Funcionário', pw - 90, sigY + 5);
+
+      doc.setFontSize(8); doc.setTextColor(150);
+      doc.text(storeName, 14, sigY + 10);
+      doc.text(employee.name, pw - 90, sigY + 10);
+
+      // Rodapé com paginação
       const pages = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pages; i++) {
         doc.setPage(i); doc.setFontSize(8); doc.setTextColor(160);
@@ -1017,6 +1216,9 @@ function EmployeeDetailView({ token, employee, onBack }) {
 
   const entradas = records.filter((r) => r.type === 'entrada').length;
   const saidas = records.filter((r) => r.type === 'saida').length;
+  const hoursData = useMemo(() => calcWorkedHours(records), [records]);
+  const expectedMinutes = useMemo(() => calcExpectedMonthlyMinutes(filterMonth, weeklyHours), [filterMonth, weeklyHours]);
+  const balanceMinutes = hoursData.totalMinutes - expectedMinutes;
 
   return (
     <>
@@ -1090,7 +1292,7 @@ function EmployeeDetailView({ token, employee, onBack }) {
 
       {/* ── Stats ── */}
       {!loading && (
-        <div className="mb-5 flex gap-3">
+        <div className="mb-5 flex flex-wrap gap-3">
           <div className="rounded-xl bg-emerald-50 px-5 py-3 text-center">
             <p className="text-xl font-extrabold text-emerald-700">{entradas}</p>
             <p className="text-xs font-semibold text-emerald-600">Entradas</p>
@@ -1099,10 +1301,26 @@ function EmployeeDetailView({ token, employee, onBack }) {
             <p className="text-xl font-extrabold text-red-600">{saidas}</p>
             <p className="text-xs font-semibold text-red-500">Saídas</p>
           </div>
-          <div className="rounded-xl bg-slate-100 px-5 py-3 text-center">
-            <p className="text-xl font-extrabold text-slate-700">{records.length}</p>
-            <p className="text-xs font-semibold text-slate-500">Total</p>
+          <div className="rounded-xl bg-blue-50 px-5 py-3 text-center">
+            <p className="text-xl font-extrabold text-blue-700">{formatMinutes(hoursData.totalMinutes)}</p>
+            <p className="text-xs font-semibold text-blue-600">Trabalhadas</p>
           </div>
+          <div className="rounded-xl bg-slate-100 px-5 py-3 text-center">
+            <p className="text-xl font-extrabold text-slate-700">{formatMinutes(expectedMinutes)}</p>
+            <p className="text-xs font-semibold text-slate-500">Esperado</p>
+          </div>
+          <div className={`rounded-xl px-5 py-3 text-center ${balanceMinutes >= 0 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
+            <p className={`text-xl font-extrabold ${balanceMinutes >= 0 ? 'text-emerald-700' : 'text-amber-700'}`}>
+              {balanceMinutes >= 0 ? '+' : ''}{formatMinutes(balanceMinutes)}
+            </p>
+            <p className={`text-xs font-semibold ${balanceMinutes >= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>Saldo</p>
+          </div>
+          {hoursData.openEntry && (
+            <div className="rounded-xl bg-yellow-50 px-5 py-3 text-center ring-1 ring-inset ring-yellow-200">
+              <p className="text-xl font-extrabold text-yellow-700">⚠️</p>
+              <p className="text-xs font-semibold text-yellow-600">Entrada aberta</p>
+            </div>
+          )}
         </div>
       )}
 

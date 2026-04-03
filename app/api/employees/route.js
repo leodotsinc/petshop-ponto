@@ -5,13 +5,21 @@ import bcrypt from 'bcryptjs';
 
 /**
  * GET /api/employees?include_inactive=true
- * Retorna funcionários ativos (padrão) ou todos incluindo inativos.
- * Público — usado pela tela de seleção e pelo painel admin.
+ * Sem parâmetros: retorna funcionários ativos (público — tablet).
+ * Com include_inactive=true: requer autenticação admin.
  */
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const includeInactive = searchParams.get('include_inactive') === 'true';
+
+    // Listar inativos requer auth admin
+    if (includeInactive) {
+      const auth = verifyAuth(request);
+      if (!auth) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+      }
+    }
 
     const query = db('employees').orderBy('name');
     if (!includeInactive) query.where('active', true);

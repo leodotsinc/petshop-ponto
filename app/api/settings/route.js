@@ -5,14 +5,16 @@ import bcrypt from 'bcryptjs';
 
 /**
  * GET /api/settings
- * Retorna configurações públicas (nome da loja).
+ * Retorna configurações públicas (nome da loja, carga horária).
  */
 export async function GET() {
   try {
-    const storeName = await db('settings').where('key', 'store_name').first();
+    const rows = await db('settings').whereIn('key', ['store_name', 'weekly_hours']);
+    const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
 
     return NextResponse.json({
-      store_name: storeName?.value || 'Pet Patas',
+      store_name: map.store_name || 'Pet Patas',
+      weekly_hours: parseFloat(map.weekly_hours) || 44,
     });
   } catch (err) {
     console.error('Erro ao buscar settings:', err);
@@ -23,7 +25,7 @@ export async function GET() {
 /**
  * PUT /api/settings
  * Atualiza configurações. Requer autenticação admin.
- * Body: { store_name?, new_password? }
+ * Body: { store_name?, new_password?, weekly_hours? }
  */
 export async function PUT(request) {
   try {
@@ -32,11 +34,25 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const { store_name, new_password } = await request.json();
+    const { store_name, new_password, weekly_hours } = await request.json();
 
     if (store_name !== undefined) {
       await db('settings')
         .insert({ key: 'store_name', value: store_name.trim() || 'Pet Patas' })
+        .onConflict('key')
+        .merge();
+    }
+
+    if (weekly_hours !== undefined) {
+      const hours = parseFloat(weekly_hours);
+      if (isNaN(hours) || hours < 1 || hours > 80) {
+        return NextResponse.json(
+          { error: 'Carga horária semanal deve ser entre 1 e 80 horas' },
+          { status: 400 },
+        );
+      }
+      await db('settings')
+        .insert({ key: 'weekly_hours', value: String(hours) })
         .onConflict('key')
         .merge();
     }

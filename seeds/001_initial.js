@@ -19,5 +19,6 @@ exports.seed = async function (knex) {
   await knex('settings').insert([
     { key: 'admin_password', value: hash },
     { key: 'store_name', value: process.env.STORE_NAME || 'Pet Patas' },
+    { key: 'weekly_hours', value: '44' },
   ]);
 };
