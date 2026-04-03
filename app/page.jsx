@@ -18,6 +18,7 @@ export default function PontoPage() {
   const [saving, setSaving] = useState(false);
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
+  const [verifyingPin, setVerifyingPin] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -60,14 +61,31 @@ export default function PontoPage() {
     setScreen('pin');
   }
 
-  function handlePinSubmit(e) {
+  async function handlePinSubmit(e) {
     e.preventDefault();
     if (pin.length < 4) {
       setPinError('PIN deve ter ao menos 4 dígitos');
       return;
     }
     setPinError('');
-    setScreen('camera');
+    setVerifyingPin(true);
+    try {
+      const res = await fetch(`/api/employees/${selectedEmp.id}/verify-pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPinError(data.error || 'PIN incorreto');
+        return;
+      }
+      setScreen('camera');
+    } catch {
+      setPinError('Erro ao verificar PIN. Tente novamente.');
+    } finally {
+      setVerifyingPin(false);
+    }
   }
 
   useEffect(() => {
@@ -171,6 +189,7 @@ export default function PontoPage() {
     setSavedRecord(null);
     setPin('');
     setPinError('');
+    setVerifyingPin(false);
     fetchData();
   }
 
@@ -309,10 +328,13 @@ export default function PontoPage() {
 
               <button
                 type="submit"
-                disabled={pin.length < 4}
-                className="w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 py-4 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={pin.length < 4 || verifyingPin}
+                className="w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 py-4 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Continuar
+                {verifyingPin && (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                )}
+                {verifyingPin ? 'Verificando...' : 'Continuar'}
               </button>
 
               <button
