@@ -1,4 +1,4 @@
-# AGENTS.md — Petshop Ponto
+# CLAUDE.md — Petshop Ponto
 
 Documento de referência para sessões de desenvolvimento com IA. Leia este arquivo antes de qualquer trabalho no projeto.
 
