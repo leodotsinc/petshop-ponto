@@ -457,11 +457,23 @@ export default function PontoPage() {
             ) : dashboardData ? (
               <>
                 {/* Banco de Horas */}
-                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/[0.04]">
+                <div className={`rounded-3xl bg-white p-5 shadow-sm ring-1 ${dashboardData.month.orphanedIds?.length > 0 ? 'ring-amber-400/60' : 'ring-black/[0.04]'}`}>
                   <div className="flex items-center justify-between mb-4">
                     <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Banco de Horas</p>
                     <span className="text-xs font-semibold text-slate-400 capitalize">{dashboardData.month.monthName}</span>
                   </div>
+
+                  {dashboardData.month.orphanedIds?.length > 0 && (
+                    <div className="mb-4 flex items-start gap-2.5 rounded-2xl bg-amber-50 px-3.5 py-3 ring-1 ring-inset ring-amber-400/30">
+                      <svg className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+                      <div>
+                        <p className="text-xs font-bold text-amber-700">Registros com pendência</p>
+                        <p className="text-xs text-amber-600 mt-0.5">
+                          {dashboardData.month.orphanedIds.length} registro{dashboardData.month.orphanedIds.length > 1 ? 's' : ''} sem par este mês. O saldo pode estar incorreto. Verifique os itens marcados no histórico.
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-3 gap-2 text-center mb-4">
                     <div className="rounded-2xl bg-slate-50 px-2 py-3">
@@ -516,12 +528,12 @@ export default function PontoPage() {
                     <div className="relative">
                       <div className="absolute left-[19px] top-2 bottom-2 w-px bg-slate-100" />
                       <div className="space-y-3">
-                        {dashboardData.today.records.map((r, i) => (
-                          <div key={r.id} className="flex items-center gap-3">
+                        {dashboardData.today.records.map((r, i) => {
+                          const isOrphan = dashboardData.month.orphanedIds?.includes(r.id);
+                          return (
+                          <div key={r.id} className={`flex items-center gap-3 ${isOrphan ? 'rounded-xl bg-amber-50 px-2 -mx-2' : ''}`}>
                             <div className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-white shadow-sm ${
-                              r.type === 'entrada'
-                                ? 'bg-emerald-500'
-                                : 'bg-slate-400'
+                              isOrphan ? 'bg-amber-400' : r.type === 'entrada' ? 'bg-emerald-500' : 'bg-slate-400'
                             }`}>
                               {r.type === 'entrada' ? (
                                 <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" /></svg>
@@ -530,20 +542,22 @@ export default function PontoPage() {
                               )}
                             </div>
                             <div className="flex-1">
-                              <p className="text-sm font-bold text-slate-700">
+                              <p className={`text-sm font-bold ${isOrphan ? 'text-amber-700' : 'text-slate-700'}`}>
                                 {r.type === 'entrada' ? 'Entrada' : 'Saída'}
+                                {isOrphan && <span className="ml-1.5 text-[10px] font-bold text-amber-500">sem par</span>}
                               </p>
                               <p className="text-xs text-slate-400">
                                 {new Date(r.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                               </p>
                             </div>
-                            {i === dashboardData.today.records.length - 1 && (
+                            {i === dashboardData.today.records.length - 1 && !isOrphan && (
                               <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 ring-1 ring-inset ring-emerald-500/20">
                                 último
                               </span>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -577,17 +591,21 @@ export default function PontoPage() {
                           <div key={dayLabel} className="mb-3">
                             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-300 mb-2 px-1">{dayLabel}</p>
                             <div className="space-y-1">
-                              {dayRecords.map((r) => (
-                                <div key={r.id} className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50">
-                                  <span className={`h-2 w-2 rounded-full ${r.type === 'entrada' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
-                                  <span className="flex-1 text-xs font-medium text-slate-600">
+                              {dayRecords.map((r) => {
+                                const isOrphan = dashboardData.month.orphanedIds?.includes(r.id);
+                                return (
+                                <div key={r.id} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${isOrphan ? 'bg-amber-50 ring-1 ring-inset ring-amber-400/30' : 'hover:bg-slate-50'}`}>
+                                  <span className={`h-2 w-2 rounded-full ${isOrphan ? 'bg-amber-400' : r.type === 'entrada' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
+                                  <span className={`flex-1 text-xs font-medium ${isOrphan ? 'text-amber-700' : 'text-slate-600'}`}>
                                     {r.type === 'entrada' ? 'Entrada' : 'Saída'}
+                                    {isOrphan && <span className="ml-1.5 text-[10px] text-amber-500 font-bold">sem par</span>}
                                   </span>
                                   <span className="text-xs tabular-nums text-slate-400">
                                     {new Date(r.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                                   </span>
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         ))}

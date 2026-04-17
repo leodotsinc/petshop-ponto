@@ -19,15 +19,38 @@ function calcWorkedMinutes(records) {
   const sorted = [...records].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   let minutes = 0;
   let entryTime = null;
+  let entryId = null;
+  const orphanedIds = new Set();
+
   for (const r of sorted) {
     if (r.type === 'entrada') {
+      if (entryTime !== null) {
+        orphanedIds.add(entryId);
+      }
       entryTime = new Date(r.timestamp);
-    } else if (r.type === 'saida' && entryTime) {
-      minutes += (new Date(r.timestamp) - entryTime) / 60000;
-      entryTime = null;
+      entryId = r.id;
+    } else if (r.type === 'saida') {
+      if (entryTime === null) {
+        orphanedIds.add(r.id);
+      } else {
+        const diff = (new Date(r.timestamp) - entryTime) / 60000;
+        if (diff > 1440) {
+          orphanedIds.add(entryId);
+          orphanedIds.add(r.id);
+        } else if (diff > 0) {
+          minutes += diff;
+        }
+        entryTime = null;
+        entryId = null;
+      }
     }
   }
-  return Math.round(minutes);
+
+  if (entryTime !== null) {
+    orphanedIds.add(entryId);
+  }
+
+  return { workedMinutes: Math.round(minutes), orphanedIds: [...orphanedIds] };
 }
 
 function calcExpectedMinutes(now, weeklyHours) {
@@ -74,7 +97,7 @@ export async function GET(request, { params }) {
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayRecords = monthRecords.filter((r) => new Date(r.timestamp) >= startOfToday);
 
-    const workedMinutes = calcWorkedMinutes(monthRecords);
+    const { workedMinutes, orphanedIds } = calcWorkedMinutes(monthRecords);
     const expectedMinutes = calcExpectedMinutes(now, weeklyHours);
     const balanceMinutes = workedMinutes - expectedMinutes;
 
@@ -95,6 +118,7 @@ export async function GET(request, { params }) {
         expectedMinutes,
         balanceMinutes,
         weeklyHours,
+        orphanedIds,
       },
     });
   } catch (err) {
