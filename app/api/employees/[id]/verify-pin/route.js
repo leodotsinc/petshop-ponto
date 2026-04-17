@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { rateLimit } from '@/lib/rate-limit';
+const jwt = require('jsonwebtoken');
 
 /**
  * POST /api/employees/[id]/verify-pin
@@ -60,7 +61,12 @@ export async function POST(request, { params }) {
       );
     }
 
-    return NextResponse.json({ ok: true });
+    const token = jwt.sign(
+      { role: 'employee', employeeId: employee.id },
+      process.env.JWT_SECRET,
+      { algorithm: 'HS256', expiresIn: '2h' },
+    );
+    return NextResponse.json({ ok: true, token, employeeName: employee.name });
   } catch (err) {
     console.error('Erro ao verificar PIN:', err);
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 });

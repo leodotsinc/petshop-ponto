@@ -19,6 +19,10 @@ export default function PontoPage() {
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState('');
   const [verifyingPin, setVerifyingPin] = useState(false);
+  const [employeeToken, setEmployeeToken] = useState(null);
+  const [dashboardData, setDashboardData] = useState(null);
+  const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const [showAllRecords, setShowAllRecords] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -53,11 +57,28 @@ export default function PontoPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  async function fetchDashboard(empId, token) {
+    setLoadingDashboard(true);
+    try {
+      const res = await fetch(`/api/employees/${empId}/dashboard`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Erro ao carregar dashboard');
+      setDashboardData(await res.json());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingDashboard(false);
+    }
+  }
+
   function handleSelect(emp) {
     setSelectedEmp(emp);
     setNextType(emp.nextType);
     setPin('');
     setPinError('');
+    setDashboardData(null);
+    setShowAllRecords(false);
     setScreen('pin');
   }
 
@@ -80,12 +101,20 @@ export default function PontoPage() {
         setPinError(data.error || 'PIN incorreto');
         return;
       }
-      setScreen('camera');
+      setEmployeeToken(data.token);
+      await fetchDashboard(selectedEmp.id, data.token);
+      setScreen('dashboard');
     } catch {
       setPinError('Erro ao verificar PIN. Tente novamente.');
     } finally {
       setVerifyingPin(false);
     }
+  }
+
+  function handlePunchFromDashboard() {
+    const nextPunch = dashboardData?.today.currentStatus === 'presente' ? 'saida' : 'entrada';
+    setNextType(nextPunch);
+    setScreen('camera');
   }
 
   useEffect(() => {
@@ -176,8 +205,24 @@ export default function PontoPage() {
     countdownRef.current = setInterval(() => {
       sec -= 1;
       setCountdown(sec);
-      if (sec <= 0) { clearInterval(countdownRef.current); goToSelect(); }
+      if (sec <= 0) {
+        clearInterval(countdownRef.current);
+        if (employeeToken) {
+          goToDashboard();
+        } else {
+          goToSelect();
+        }
+      }
     }, 1000);
+  }
+
+  async function goToDashboard() {
+    clearInterval(countdownRef.current);
+    setPhoto(null);
+    setSavedRecord(null);
+    setShowAllRecords(false);
+    await fetchDashboard(selectedEmp.id, employeeToken);
+    setScreen('dashboard');
   }
 
   function goToSelect() {
@@ -190,6 +235,9 @@ export default function PontoPage() {
     setPin('');
     setPinError('');
     setVerifyingPin(false);
+    setEmployeeToken(null);
+    setDashboardData(null);
+    setShowAllRecords(false);
     fetchData();
   }
 
@@ -201,6 +249,8 @@ export default function PontoPage() {
     'from-amber-500 to-orange-600',
     'from-cyan-500 to-sky-600',
   ];
+
+  const empColorIndex = selectedEmp ? employees.findIndex((e) => e.id === selectedEmp.id) % COLORS.length : 0;
 
   if (loading) {
     return (
@@ -275,7 +325,7 @@ export default function PontoPage() {
 
           <div className="pb-6 text-center">
             <Link href="/admin" className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-xs font-semibold text-slate-400 shadow-sm ring-1 ring-black/[0.04] transition hover:text-emerald-600 hover:shadow-md">
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
               Painel Admin
             </Link>
           </div>
@@ -287,24 +337,19 @@ export default function PontoPage() {
         <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-50 px-6">
           <div className="w-full max-w-sm">
             <div className="flex flex-col items-center gap-2 mb-8">
-              <div className={`flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br ${COLORS[employees.findIndex(e => e.id === selectedEmp?.id) % COLORS.length] || COLORS[0]} text-2xl font-extrabold text-white shadow-xl`}>
+              <div className={`flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br ${COLORS[empColorIndex]} text-2xl font-extrabold text-white shadow-xl`}>
                 {selectedEmp && initials(selectedEmp.name)}
               </div>
               <p className="text-xl font-extrabold text-slate-800 mt-2">{selectedEmp?.name}</p>
-              <span className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1 text-xs font-bold tracking-wide ${
-                nextType === 'entrada'
-                  ? 'bg-orange-50 text-orange-600 ring-1 ring-inset ring-orange-500/20'
-                  : 'bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-500/20'
-              }`}>
-                <span className={`h-1.5 w-1.5 rounded-full ${nextType === 'entrada' ? 'bg-orange-400' : 'bg-emerald-400'}`} />
-                {nextType === 'entrada' ? 'Registrar Entrada' : 'Registrar Saída'}
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3.5 py-1 text-xs font-semibold text-slate-500">
+                Digite seu PIN para acessar
               </span>
             </div>
 
             <form onSubmit={handlePinSubmit} className="flex flex-col gap-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-600 mb-2 text-center">
-                  Digite seu PIN
+                  PIN de acesso
                 </label>
                 <input
                   type="password"
@@ -334,7 +379,7 @@ export default function PontoPage() {
                 {verifyingPin && (
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
                 )}
-                {verifyingPin ? 'Verificando...' : 'Continuar'}
+                {verifyingPin ? 'Verificando...' : 'Entrar'}
               </button>
 
               <button
@@ -345,6 +390,248 @@ export default function PontoPage() {
                 ← Voltar
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── DASHBOARD DO FUNCIONÁRIO ─── */}
+      {screen === 'dashboard' && (
+        <div className="flex min-h-screen flex-col bg-slate-100">
+          {/* Header escuro com avatar e status */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-5 pb-10 pt-5 text-white">
+            <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-white/[0.03]" />
+            <div className="absolute -left-8 bottom-0 h-32 w-32 rounded-full bg-white/[0.03]" />
+
+            {/* Top bar */}
+            <div className="relative flex items-center justify-between mb-7">
+              <button
+                onClick={goToSelect}
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3.5 py-2 text-xs font-semibold text-white/80 backdrop-blur-sm transition hover:bg-white/20"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" /></svg>
+                Sair
+              </button>
+              <p className="text-2xl font-extrabold tabular-nums tracking-tight">
+                {clock.slice(0, 5)}
+              </p>
+            </div>
+
+            {/* Employee info */}
+            <div className="relative flex items-center gap-4">
+              <div className={`flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${COLORS[empColorIndex]} text-2xl font-extrabold text-white shadow-xl`}>
+                {selectedEmp && initials(selectedEmp.name)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[22px] font-extrabold leading-tight truncate">{selectedEmp?.name}</p>
+                <p className="text-sm text-slate-400 capitalize mt-0.5">{dateStr}</p>
+                {!loadingDashboard && dashboardData && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
+                      dashboardData.today.currentStatus === 'presente'
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : 'bg-slate-700 text-slate-300'
+                    }`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${
+                        dashboardData.today.currentStatus === 'presente' ? 'bg-emerald-400' : 'bg-slate-500'
+                      }`} />
+                      {dashboardData.today.currentStatus === 'presente' ? 'Presente' : 'Fora'}
+                    </span>
+                    {dashboardData.today.lastRecord && (
+                      <span className="text-xs text-slate-500">
+                        desde {new Date(dashboardData.today.lastRecord.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Cards — sobrepõe o header com margin negativo */}
+          <div className="flex-1 px-4 -mt-5 space-y-3 pb-32">
+            {loadingDashboard ? (
+              <div className="flex flex-col items-center justify-center pt-20 gap-3">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-emerald-500" />
+                <p className="text-sm text-slate-400">Carregando seus dados...</p>
+              </div>
+            ) : dashboardData ? (
+              <>
+                {/* Banco de Horas */}
+                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/[0.04]">
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Banco de Horas</p>
+                    <span className="text-xs font-semibold text-slate-400 capitalize">{dashboardData.month.monthName}</span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 text-center mb-4">
+                    <div className="rounded-2xl bg-slate-50 px-2 py-3">
+                      <p className="text-lg font-extrabold text-slate-800 tabular-nums">{formatMinutes(dashboardData.month.workedMinutes)}</p>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-0.5">Trabalhado</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 px-2 py-3">
+                      <p className="text-lg font-extrabold text-slate-800 tabular-nums">{formatMinutes(dashboardData.month.expectedMinutes)}</p>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-0.5">Esperado</p>
+                    </div>
+                    <div className={`rounded-2xl px-2 py-3 ${
+                      dashboardData.month.balanceMinutes >= 0
+                        ? 'bg-emerald-50'
+                        : 'bg-red-50'
+                    }`}>
+                      <p className={`text-lg font-extrabold tabular-nums ${
+                        dashboardData.month.balanceMinutes >= 0 ? 'text-emerald-600' : 'text-red-600'
+                      }`}>
+                        {dashboardData.month.balanceMinutes >= 0 ? '+' : '-'}{formatMinutes(Math.abs(dashboardData.month.balanceMinutes))}
+                      </p>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-0.5">Saldo</p>
+                    </div>
+                  </div>
+
+                  {/* Barra de progresso */}
+                  {dashboardData.month.expectedMinutes > 0 && (
+                    <div>
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-700"
+                          style={{ width: `${Math.min(100, (dashboardData.month.workedMinutes / dashboardData.month.expectedMinutes) * 100)}%` }}
+                        />
+                      </div>
+                      <p className="mt-1.5 text-right text-[10px] font-semibold text-slate-400">
+                        {Math.round((dashboardData.month.workedMinutes / dashboardData.month.expectedMinutes) * 100)}% do esperado
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Registros de Hoje */}
+                <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/[0.04]">
+                  <p className="mb-4 text-xs font-bold uppercase tracking-widest text-slate-400">Hoje</p>
+
+                  {dashboardData.today.records.length === 0 ? (
+                    <div className="py-5 text-center">
+                      <p className="text-3xl mb-2">☕</p>
+                      <p className="text-sm font-medium text-slate-500">Nenhum registro hoje ainda</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Registre sua entrada abaixo</p>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <div className="absolute left-[19px] top-2 bottom-2 w-px bg-slate-100" />
+                      <div className="space-y-3">
+                        {dashboardData.today.records.map((r, i) => (
+                          <div key={r.id} className="flex items-center gap-3">
+                            <div className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 border-white shadow-sm ${
+                              r.type === 'entrada'
+                                ? 'bg-emerald-500'
+                                : 'bg-slate-400'
+                            }`}>
+                              {r.type === 'entrada' ? (
+                                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" /></svg>
+                              ) : (
+                                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" /></svg>
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-bold text-slate-700">
+                                {r.type === 'entrada' ? 'Entrada' : 'Saída'}
+                              </p>
+                              <p className="text-xs text-slate-400">
+                                {new Date(r.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+                            {i === dashboardData.today.records.length - 1 && (
+                              <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-600 ring-1 ring-inset ring-emerald-500/20">
+                                último
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Histórico do mês */}
+                {dashboardData.month.records.length > dashboardData.today.records.length && (
+                  <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-black/[0.04]">
+                    <button
+                      onClick={() => setShowAllRecords((v) => !v)}
+                      className="flex w-full items-center justify-between"
+                    >
+                      <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                        Histórico do Mês
+                      </p>
+                      <svg
+                        className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${showAllRecords ? 'rotate-180' : ''}`}
+                        fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                      </svg>
+                    </button>
+
+                    {showAllRecords && (
+                      <div className="mt-4 space-y-1">
+                        {groupByDay(
+                          dashboardData.month.records.filter(
+                            (r) => !dashboardData.today.records.find((tr) => tr.id === r.id)
+                          )
+                        ).map(([dayLabel, dayRecords]) => (
+                          <div key={dayLabel} className="mb-3">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-300 mb-2 px-1">{dayLabel}</p>
+                            <div className="space-y-1">
+                              {dayRecords.map((r) => (
+                                <div key={r.id} className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50">
+                                  <span className={`h-2 w-2 rounded-full ${r.type === 'entrada' ? 'bg-emerald-400' : 'bg-slate-300'}`} />
+                                  <span className="flex-1 text-xs font-medium text-slate-600">
+                                    {r.type === 'entrada' ? 'Entrada' : 'Saída'}
+                                  </span>
+                                  <span className="text-xs tabular-nums text-slate-400">
+                                    {new Date(r.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="rounded-3xl bg-white p-8 text-center shadow-sm">
+                <p className="text-slate-400 text-sm">Não foi possível carregar os dados.</p>
+                <button
+                  onClick={() => fetchDashboard(selectedEmp.id, employeeToken)}
+                  className="mt-3 text-sm font-semibold text-emerald-600"
+                >
+                  Tentar novamente
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Botão fixo de bater ponto */}
+          <div className="fixed inset-x-0 bottom-0 bg-white/90 backdrop-blur-xl border-t border-slate-100 p-4">
+            <button
+              onClick={handlePunchFromDashboard}
+              disabled={loadingDashboard}
+              className={`w-full rounded-2xl py-4 text-sm font-extrabold text-white shadow-xl transition active:scale-[0.97] disabled:opacity-40 flex items-center justify-center gap-3 ${
+                dashboardData?.today.currentStatus === 'presente'
+                  ? 'bg-gradient-to-r from-slate-700 to-slate-800 shadow-slate-800/20'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 shadow-emerald-500/25'
+              }`}
+            >
+              {dashboardData?.today.currentStatus === 'presente' ? (
+                <>
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" /></svg>
+                  Registrar Saída
+                </>
+              ) : (
+                <>
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" /></svg>
+                  Registrar Entrada
+                </>
+              )}
+            </button>
           </div>
         </div>
       )}
@@ -366,7 +653,12 @@ export default function PontoPage() {
           <canvas ref={canvasRef} className="hidden" />
           <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 to-transparent px-8 pb-10 pt-20">
             <div className="flex items-center justify-between max-w-md mx-auto">
-              <button onClick={goToSelect} className="rounded-full bg-white/15 px-6 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/25 ring-1 ring-white/20">← Voltar</button>
+              <button
+                onClick={employeeToken ? goToDashboard : goToSelect}
+                className="rounded-full bg-white/15 px-6 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/25 ring-1 ring-white/20"
+              >
+                ← Voltar
+              </button>
               <button onClick={takePhoto} disabled={saving} className="h-20 w-20 rounded-full border-[6px] border-white bg-white shadow-2xl transition-transform active:scale-90 disabled:opacity-50" aria-label="Tirar foto" />
               <div className="w-24" />
             </div>
@@ -398,8 +690,11 @@ export default function PontoPage() {
                 })}
               </p>
             </div>
-            <button onClick={goToSelect} className="mt-2 w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 py-4 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition active:scale-[0.97]">
-              Concluído
+            <button
+              onClick={employeeToken ? goToDashboard : goToSelect}
+              className="mt-2 w-full rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 py-4 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition active:scale-[0.97]"
+            >
+              {employeeToken ? 'Ver meu ponto' : 'Concluído'}
             </button>
             <div className="w-full">
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
@@ -416,4 +711,23 @@ export default function PontoPage() {
 
 function initials(name) {
   return name.trim().split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function formatMinutes(m) {
+  if (m === 0) return '0h00';
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  return `${h}h${String(min).padStart(2, '0')}`;
+}
+
+function groupByDay(records) {
+  const map = new Map();
+  for (const r of [...records].reverse()) {
+    const key = new Date(r.timestamp).toLocaleDateString('pt-BR', {
+      weekday: 'short', day: '2-digit', month: 'short',
+    });
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(r);
+  }
+  return [...map.entries()];
 }
