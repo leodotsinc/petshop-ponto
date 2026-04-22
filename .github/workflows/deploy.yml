@@ -16,4 +16,3 @@ jobs:
       app_dir: petshop-ponto
       service_name: app
       container_name: petshop-ponto
-      compose_file: docker-compose.prod.yml
