@@ -1,0 +1,14 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    uses: leodotsinc/.github/.github/workflows/ci.yml@main
+    with:
+      node_version: "24"
+      package_manager: npm
+      install_command: npm ci
+      build_command: npm run build
