@@ -2,6 +2,9 @@
 const nextConfig = {
   serverExternalPackages: ['knex', 'pg', 'pg-native', 'bcryptjs', 'jsonwebtoken'],
 
+  // Empty turbopack config to silence Next.js 16 warning about webpack config
+  turbopack: {},
+
   async headers() {
     return [
       {
