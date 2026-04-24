@@ -17,20 +17,7 @@ const nextConfig = {
     ];
   },
 
-  // Turbopack config (Next.js 16+ default)
-  // resolveAlias does not support `false` — use empty module instead
-  turbopack: {
-    resolveAlias: {
-      oracledb: { browser: 'empty' },
-      'better-sqlite3': { browser: 'empty' },
-      mysql: { browser: 'empty' },
-      mysql2: { browser: 'empty' },
-      sqlite3: { browser: 'empty' },
-      tedious: { browser: 'empty' },
-    },
-  },
-
-  // Webpack config (fallback / older builds)
+  // Webpack config — ignora dialetos opcionais do Knex
   webpack: (config) => {
     config.resolve.fallback = {
       ...config.resolve.fallback,

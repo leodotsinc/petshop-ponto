@@ -1,6 +1,8 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Content sources (Tailwind v4 — replaces tailwind.config.js) */
+@source "../app/**/*.{js,jsx}";
+@source "../components/**/*.{js,jsx}";
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
