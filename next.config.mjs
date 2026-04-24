@@ -18,14 +18,15 @@ const nextConfig = {
   },
 
   // Turbopack config (Next.js 16+ default)
+  // resolveAlias does not support `false` — use empty module instead
   turbopack: {
     resolveAlias: {
-      oracledb: false,
-      'better-sqlite3': false,
-      mysql: false,
-      mysql2: false,
-      sqlite3: false,
-      tedious: false,
+      oracledb: { browser: 'empty' },
+      'better-sqlite3': { browser: 'empty' },
+      mysql: { browser: 'empty' },
+      mysql2: { browser: 'empty' },
+      sqlite3: { browser: 'empty' },
+      tedious: { browser: 'empty' },
     },
   },
 
