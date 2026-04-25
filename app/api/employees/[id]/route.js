@@ -3,10 +3,17 @@ import db from '@/lib/db';
 import { verifyAuth } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
 
+function cleanOptionalText(value, maxLength) {
+  if (value === null) return null;
+  if (value === undefined) return undefined;
+  const cleaned = String(value).trim();
+  return cleaned ? cleaned.slice(0, maxLength) : null;
+}
+
 /**
  * PATCH /api/employees/:id
- * Reativa um funcionário e/ou altera o PIN. Requer autenticação admin.
- * Body: { reactivate?: boolean, pin?: string }
+ * Reativa um funcionário, altera cadastro e/ou altera o PIN. Requer autenticação admin.
+ * Body: { reactivate?: boolean, pin?: string, name?: string, cpf?: string, role?: string, admission_date?: string | null }
  */
 export async function PATCH(request, { params }) {
   try {
@@ -28,6 +35,32 @@ export async function PATCH(request, { params }) {
         return NextResponse.json({ error: 'PIN deve ter de 4 a 8 dígitos' }, { status: 400 });
       }
       updates.pin_hash = await bcrypt.hash(body.pin, 10);
+    }
+
+    if (body.name !== undefined) {
+      const name = String(body.name).trim();
+      if (!name) {
+        return NextResponse.json({ error: 'Nome é obrigatório' }, { status: 400 });
+      }
+      if (name.length > 100) {
+        return NextResponse.json({ error: 'Nome muito longo (máx. 100 caracteres)' }, { status: 400 });
+      }
+      updates.name = name;
+    }
+
+    if (body.cpf !== undefined) {
+      updates.cpf = body.cpf ? String(body.cpf).replace(/\D/g, '').slice(0, 11) : null;
+    }
+
+    if (body.role !== undefined) {
+      updates.role = cleanOptionalText(body.role, 120);
+    }
+
+    if (body.admission_date !== undefined) {
+      if (body.admission_date && !/^\d{4}-\d{2}-\d{2}$/.test(body.admission_date)) {
+        return NextResponse.json({ error: 'Data de admissão inválida' }, { status: 400 });
+      }
+      updates.admission_date = body.admission_date || null;
     }
 
     if (Object.keys(updates).length === 0) {

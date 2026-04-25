@@ -1,4 +1,8 @@
-try { require('dotenv').config({ path: '.env.local' }); } catch (_) {}
+try {
+  const dotenv = require('dotenv');
+  dotenv.config({ path: '.env.local' });
+  dotenv.config({ path: '.env' });
+} catch (_) {}
 
 module.exports = {
   client: 'pg',

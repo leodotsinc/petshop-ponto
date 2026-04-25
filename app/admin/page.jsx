@@ -2,6 +2,28 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import ThemeToggle from '@/components/theme-toggle';
+import {
+  calculateExpectedMonthlyMinutes,
+  calculateWorkedHours,
+  formatBusinessDate,
+  formatBusinessDateTime,
+  formatBusinessTime,
+  getBusinessDateKey,
+} from '@/lib/timekeeping';
+
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+async function readJson(response, fallback) {
+  try {
+    const data = await response.json();
+    return response.ok ? data : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export default function AdminPage() {
   const [token, setToken] = useState(null);
@@ -29,75 +51,96 @@ export default function AdminPage() {
     { id: 'employees',   label: 'Colaboradores', icon: <IconUsers /> },
     { id: 'settings',   label: 'Configurações', icon: <IconGear /> },
   ];
+  const activeTab = TABS.find((t) => t.id === tab);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="relative flex min-h-screen overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(15,118,110,0.12),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(182,137,71,0.12),_transparent_24%)]" />
       {/* ── Sidebar ── */}
-      <aside className="hidden lg:flex w-64 flex-col border-r border-slate-200 bg-white h-screen">
-        <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-5 shrink-0">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-sm font-bold text-white shadow-md shadow-emerald-500/20">P</div>
+      <aside className="surface-card hidden h-screen w-72 shrink-0 flex-col rounded-none border-y-0 border-l-0 lg:flex">
+        <div className="soft-divider flex items-center gap-3 border-b px-6 py-6 shrink-0">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-700 via-teal-600 to-emerald-500 text-sm font-bold text-white shadow-[0_18px_40px_rgba(15,118,110,0.25)]">PP</div>
           <div>
-            <p className="text-sm font-bold text-slate-800">Ponto Digital</p>
-            <p className="text-xs text-slate-400">Painel Admin</p>
+            <p className="font-display text-lg font-semibold text-slate-900">Pet Patas</p>
+            <p className="text-xs uppercase tracking-[0.26em] text-slate-400">Painel Admin</p>
           </div>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-5">
           {TABS.map((t) => (
-            <button key={t.id} onClick={() => handleTabChange(t.id)} className={`flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
-              tab === t.id ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+            <button key={t.id} onClick={() => handleTabChange(t.id)} className={`group flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition-all ${
+              tab === t.id
+                ? 'bg-slate-900 text-white shadow-[0_18px_35px_rgba(15,23,42,0.18)]'
+                : 'text-slate-500 hover:bg-white/80 hover:text-slate-900'
             }`}>
-              <span className={tab === t.id ? 'text-emerald-600' : 'text-slate-400'}>{t.icon}</span>
+              <span className={tab === t.id ? 'text-amber-300' : 'text-slate-400 group-hover:text-teal-600'}>{t.icon}</span>
               {t.label}
             </button>
           ))}
         </nav>
-        <div className="border-t border-slate-100 px-3 py-3 space-y-1 shrink-0">
-          <Link href="/" className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700">
+        <div className="soft-divider space-y-2 border-t px-4 py-4 shrink-0">
+          <div className="px-1 pb-1">
+            <ThemeToggle />
+          </div>
+          <Link href="/" className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-500 transition hover:bg-white/80 hover:text-slate-900">
             <IconBack /> Voltar ao ponto
           </Link>
-          <button onClick={handleLogout} className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-400 hover:bg-red-50 hover:text-red-600">
+          <button onClick={handleLogout} className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-400 transition hover:bg-red-50 hover:text-red-600">
             <IconLogout /> Sair
           </button>
         </div>
       </aside>
 
       {/* ── Main ── */}
-      <div className="flex flex-1 flex-col min-w-0 h-screen">
+      <div className="relative z-10 flex h-screen min-w-0 flex-1 flex-col">
         {/* Mobile header */}
-        <header className="lg:hidden flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shrink-0">
+        <header className="surface-card soft-divider mx-3 mt-3 flex items-center justify-between rounded-[26px] border px-4 py-3 lg:hidden shrink-0">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white">P</div>
-            <span className="text-sm font-bold text-slate-800">Admin</span>
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-700 to-emerald-500 text-xs font-bold text-white">PP</div>
+            <div>
+              <p className="font-display text-lg leading-none text-slate-900">Pet Patas</p>
+              <span className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Admin</span>
+            </div>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/" className="text-xs text-slate-400 hover:text-emerald-600">Ponto</Link>
+            <ThemeToggle subtle />
+            <Link href="/" className="text-xs font-semibold text-slate-400 hover:text-teal-700">Ponto</Link>
             <button onClick={handleLogout} className="text-xs text-slate-400 hover:text-red-600">Sair</button>
           </div>
         </header>
 
         {/* Mobile tabs */}
-        <div className="lg:hidden flex border-b border-slate-200 bg-white px-2 shrink-0">
+        <div className="mx-3 mt-3 grid grid-cols-4 gap-2 lg:hidden shrink-0">
           {TABS.map((t) => (
-            <button key={t.id} onClick={() => handleTabChange(t.id)} className={`flex-1 py-3 text-center text-xs font-semibold transition-colors border-b-2 ${
-              tab === t.id ? 'border-emerald-500 text-emerald-600' : 'border-transparent text-slate-400'
+            <button key={t.id} onClick={() => handleTabChange(t.id)} className={`rounded-2xl px-2 py-3 text-center text-[11px] font-bold transition ${
+              tab === t.id
+                ? 'bg-slate-900 text-white shadow-[0_14px_30px_rgba(15,23,42,0.16)]'
+                : 'surface-card text-slate-500'
             }`}>{t.label}</button>
           ))}
         </div>
 
         {/* Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-4xl">
-            <h2 className="mb-6 text-xl font-extrabold text-slate-800">
-              {tab === 'employees' && selectedEmployee
-                ? selectedEmployee.name
-                : TABS.find((t) => t.id === tab)?.label}
-            </h2>
+        <main className="flex-1 overflow-y-auto px-4 pb-8 pt-4 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8">
+          <div className="mx-auto max-w-5xl">
+            <section className="surface-card-strong mb-6 rounded-[24px] px-5 py-4 sm:px-6">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="section-kicker">Painel admin</p>
+                  <h2 className="mt-2 text-2xl font-extrabold leading-tight text-slate-900 sm:text-3xl">
+                    {tab === 'employees' && selectedEmployee ? selectedEmployee.name : activeTab?.label}
+                  </h2>
+                </div>
+                <p className="text-sm font-semibold capitalize text-slate-500">
+                  {formatBusinessDate(new Date(), { weekday: 'long', day: '2-digit', month: 'long' })}
+                </p>
+              </div>
+            </section>
             {tab === 'records'   && <RecordsTab token={token} />}
             {tab === 'report'    && <ReportTab token={token} />}
             {tab === 'employees' && (
               selectedEmployee
                 ? <EmployeeDetailView token={token} employee={selectedEmployee} onBack={() => setSelectedEmployee(null)} />
-                : <EmployeesTab onSelectEmployee={setSelectedEmployee} />
+                : <EmployeesTab token={token} onSelectEmployee={setSelectedEmployee} />
             )}
             {tab === 'settings'  && <SettingsTab token={token} />}
           </div>
@@ -131,101 +174,51 @@ function LoginScreen({ onLogin }) {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen flex-col lg:flex-row">
       {/* Lateral decorativa */}
-      <div className="hidden lg:flex lg:w-1/2 items-center justify-center bg-gradient-to-br from-emerald-600 via-emerald-600 to-teal-600 p-12">
-        <div className="max-w-md text-center text-white">
-          <p className="text-7xl mb-6">🐾</p>
-          <h2 className="text-3xl font-extrabold tracking-tight">Ponto Digital</h2>
-          <p className="mt-3 text-emerald-100/80 text-lg">Controle de ponto simples e seguro para sua equipe</p>
+      <div className="relative hidden overflow-hidden lg:flex lg:w-[54%] items-center justify-center bg-[linear-gradient(145deg,#0f766e_0%,#0f4c5c_48%,#102a43_100%)] p-12">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.12),_transparent_26%),radial-gradient(circle_at_bottom_left,_rgba(182,137,71,0.28),_transparent_28%)]" />
+        <div className="relative z-10 max-w-xl text-white">
+          <p className="section-kicker !text-white/65">Pet Patas</p>
+          <h2 className="font-display mt-5 text-6xl leading-[1.02]">
+            Ponto Digital
+          </h2>
+          <p className="mt-5 max-w-lg text-lg leading-8 text-white/78">
+            Painel administrativo para registros, colaboradores, relatórios e configurações da loja.
+          </p>
         </div>
       </div>
 
       {/* Formulário */}
-      <div className="flex flex-1 items-center justify-center bg-white px-6">
-        <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-6">
+      <div className="flex flex-1 items-center justify-center px-6 py-10">
+        <form onSubmit={handleSubmit} className="surface-card-strong w-full max-w-md rounded-[32px] p-7 sm:p-9 space-y-6">
+          <div className="flex justify-end">
+            <ThemeToggle />
+          </div>
           <div className="lg:hidden text-center mb-2">
-            <p className="text-5xl mb-3">🐾</p>
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-teal-700 to-emerald-500 text-xl font-bold text-white shadow-[0_18px_40px_rgba(15,118,110,0.22)]">
+              PP
+            </div>
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-800">Acesso Admin</h1>
-            <p className="mt-1 text-sm text-slate-400">Digite a senha de administrador</p>
+            <p className="section-kicker">Acesso restrito</p>
+            <h1 className="font-display mt-3 text-4xl leading-tight text-slate-900">Painel administrativo</h1>
+            <p className="mt-3 text-sm leading-6 text-slate-500">Digite a senha do administrador para abrir o centro de controle da loja.</p>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Senha</label>
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Senha</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus placeholder="••••••••"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm placeholder:text-slate-300 focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-emerald-500/10 transition" />
+              className="input-style" />
           </div>
-          {error && <p className="rounded-lg bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600">{error}</p>}
-          <button type="submit" disabled={loading} className="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:shadow-xl disabled:opacity-50">
+          {error && <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600 ring-1 ring-red-100">{error}</p>}
+          <button type="submit" disabled={loading} className="w-full rounded-2xl bg-[linear-gradient(135deg,#0f766e_0%,#0f4c5c_100%)] py-3.5 text-sm font-bold text-white shadow-[0_24px_40px_rgba(15,118,110,0.22)] transition hover:shadow-[0_28px_50px_rgba(15,118,110,0.28)] disabled:opacity-50">
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
-          <Link href="/" className="block text-center text-sm text-slate-400 hover:text-emerald-600 transition">← Voltar ao ponto</Link>
+          <Link href="/" className="block text-center text-sm font-semibold text-slate-400 hover:text-teal-700 transition">← Voltar ao ponto</Link>
         </form>
       </div>
     </div>
   );
-}
-
-/* ═══════════ CÁLCULO DE HORAS ═══════════ */
-
-/**
- * Calcula as horas trabalhadas a partir de um array de registros.
- * Emparelha entrada→saída sequencialmente e soma os intervalos.
- * Retorna { totalMinutes, pairs: [{ entrada, saida, minutes }], openEntry }
- */
-function calcWorkedHours(records) {
-  // Ordena por timestamp crescente
-  const sorted = [...records].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  const pairs = [];
-  let openEntry = null;
-
-  for (const r of sorted) {
-    if (r.type === 'entrada') {
-      openEntry = r;
-    } else if (r.type === 'saida' && openEntry) {
-      const entradaTime = new Date(openEntry.timestamp);
-      const saidaTime = new Date(r.timestamp);
-      const minutes = (saidaTime - entradaTime) / 60000;
-      if (minutes > 0 && minutes < 1440) { // Ignora pares inválidos (> 24h)
-        pairs.push({ entrada: openEntry, saida: r, minutes });
-      }
-      openEntry = null;
-    }
-  }
-
-  const totalMinutes = pairs.reduce((acc, p) => acc + p.minutes, 0);
-  return { totalMinutes, pairs, openEntry };
-}
-
-/**
- * Calcula as horas esperadas de forma proporcional:
- * - Mês atual → proporcional aos dias já decorridos até hoje
- * - Mês passado → mês inteiro (já fechou)
- * - Mês futuro → 0
- *
- * Taxa diária = weeklyHours / 7 (média diária incluindo fins de semana).
- */
-function calcExpectedMonthlyMinutes(yearMonth, weeklyHours) {
-  const [year, month] = yearMonth.split('-').map(Number);
-  const now = new Date();
-  const curYear = now.getFullYear();
-  const curMonth = now.getMonth() + 1;
-
-  let days;
-  if (year === curYear && month === curMonth) {
-    // Mês atual: conta até hoje (inclusive)
-    days = now.getDate();
-  } else if (year < curYear || (year === curYear && month < curMonth)) {
-    // Mês passado: mês completo
-    days = new Date(year, month, 0).getDate();
-  } else {
-    // Mês futuro
-    days = 0;
-  }
-
-  const dailyMinutes = (weeklyHours / 7) * 60;
-  return dailyMinutes * days;
 }
 
 function formatMinutes(totalMinutes) {
@@ -236,6 +229,77 @@ function formatMinutes(totalMinutes) {
   return `${sign}${h}h${String(m).padStart(2, '0')}`;
 }
 
+const MONTH_NAMES = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
+
+function getCurrentMonthKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function normalizeMonthKey(monthKey) {
+  return /^\d{4}-\d{2}$/.test(monthKey || '') ? monthKey : getCurrentMonthKey();
+}
+
+function getMonthLabel(monthKey) {
+  const safeMonth = normalizeMonthKey(monthKey);
+  const [year, month] = safeMonth.split('-').map(Number);
+  return `${MONTH_NAMES[month - 1]} de ${year}`;
+}
+
+function formatCpf(cpf) {
+  const digits = String(cpf || '').replace(/\D/g, '');
+  if (digits.length !== 11) return cpf || 'Não informado';
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
+function formatDateOnly(date) {
+  if (!date) return 'Não informado';
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)) {
+    const [year, month, day] = date.slice(0, 10).split('-');
+    return `${day}/${month}/${year}`;
+  }
+  return formatBusinessDate(date, { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function nullableText(value) {
+  return value ? String(value) : 'Não informado';
+}
+
+async function loadPdfLibraries() {
+  const [{ jsPDF }, autoTableModule] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
+
+  return {
+    jsPDF,
+    autoTable: autoTableModule.default || autoTableModule.autoTable,
+  };
+}
+
+function getEmployeeInfo(name, records = []) {
+  const first = records.find((r) => r.employee_name === name) || {};
+  return {
+    name,
+    cpf: first.employee_cpf || '',
+    role: first.employee_role || '',
+    admissionDate: first.employee_admission_date || '',
+  };
+}
+
 /* ═══════════ TAB: REGISTROS (painel do dia) ═══════════ */
 
 function RecordsTab({ token }) {
@@ -244,22 +308,24 @@ function RecordsTab({ token }) {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
-
   const fetchData = useCallback(async () => {
     try {
+      const todayKey = getBusinessDateKey();
       const [empsRes, recsRes] = await Promise.all([
         fetch('/api/employees'),
-        fetch(`/api/records?date=${today}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/records?date=${todayKey}`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
-      const [emps, recs] = await Promise.all([empsRes.json(), recsRes.json()]);
-      setEmployees(emps);
+      const [emps, recs] = await Promise.all([
+        readJson(empsRes, []),
+        readJson(recsRes, []),
+      ]);
+      setEmployees(safeArray(emps));
       // records vêm desc; invertemos para timeline crescente
-      setRecords([...recs].reverse());
+      setRecords([...safeArray(recs)].reverse());
       setLastUpdated(new Date());
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
-  }, [token, today]);
+  }, [token]);
 
   // Carrega ao montar e atualiza a cada 30s
   useEffect(() => {
@@ -278,8 +344,11 @@ function RecordsTab({ token }) {
   const presentes = employees.filter((e) => lastByEmployee[e.id]?.type === 'entrada');
   const ausentes  = employees.filter((e) => !lastByEmployee[e.id] || lastByEmployee[e.id].type === 'saida');
 
-  const todayLabel = new Date().toLocaleDateString('pt-BR', {
-    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+  const todayLabel = formatBusinessDate(new Date(), {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
   });
 
   if (loading) return (
@@ -301,7 +370,7 @@ function RecordsTab({ token }) {
           <IconRefresh /> Atualizar
           {lastUpdated && (
             <span className="ml-1 text-slate-300">
-              · {lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+              · {formatBusinessTime(lastUpdated)}
             </span>
           )}
         </button>
@@ -344,7 +413,7 @@ function RecordsTab({ token }) {
                   <div className="flex items-center gap-2 text-right">
                     {last && (
                       <span className="text-xs text-slate-400">
-                        {new Date(last.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        {formatBusinessTime(last.timestamp)}
                       </span>
                     )}
                     <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
@@ -380,7 +449,7 @@ function RecordsTab({ token }) {
                 <li key={r.id} className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-slate-50/50">
                   {/* Horário */}
                   <span className="w-12 shrink-0 text-sm font-bold tabular-nums text-slate-700">
-                    {new Date(r.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                    {formatBusinessTime(r.timestamp)}
                   </span>
                   {/* Indicador */}
                   <span className={`h-2 w-2 shrink-0 rounded-full ${r.type === 'entrada' ? 'bg-emerald-400' : 'bg-red-400'}`} />
@@ -406,37 +475,37 @@ function RecordsTab({ token }) {
 
 /**
  * Agrupa registros por dia e retorna uma linha por dia para o PDF.
- * Formato: [ data, entradas, saídas, total do dia ]
- * Ex: [ "seg, 01/04/2025", "08:00 / 13:30", "12:00 / 18:00", "8h30" ]
+ * Formato: [ data, entradas, saídas, duração, observações ]
  */
 function buildDayTable(records) {
   const sorted = [...records].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   const byDay = {};
   for (const r of sorted) {
     const d = new Date(r.timestamp);
-    const key = d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+    const key = formatBusinessDate(d, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
     if (!byDay[key]) byDay[key] = { entradas: [], saidas: [] };
-    const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const time = formatBusinessTime(d);
     if (r.type === 'entrada') byDay[key].entradas.push(time);
     else byDay[key].saidas.push(time);
   }
 
   return Object.entries(byDay).map(([day, { entradas, saidas }]) => {
-    // Calcular total do dia emparelhando entradas e saídas
-    let dayMinutes = 0;
-    const pairs = Math.min(entradas.length, saidas.length);
-    for (let i = 0; i < pairs; i++) {
-      const [eh, em] = entradas[i].split(':').map(Number);
-      const [sh, sm] = saidas[i].split(':').map(Number);
-      const mins = (sh * 60 + sm) - (eh * 60 + em);
-      if (mins > 0) dayMinutes += mins;
-    }
-    const dayTotal = dayMinutes > 0 ? formatMinutes(dayMinutes) : '—';
+    const dayRecords = sorted.filter((r) => {
+      const d = new Date(r.timestamp);
+      return formatBusinessDate(d, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) === day;
+    });
+    const { totalMinutes, openEntry, pairs } = calculateWorkedHours(dayRecords);
+    const observations = [];
+    if (openEntry) observations.push('Entrada sem saída');
+    if (entradas.length !== saidas.length) observations.push('Marcações ímpares');
+    if (pairs.length === 0 && dayRecords.length > 0) observations.push('Sem par válido');
+
     return [
       day,
       entradas.join(' / ') || '—',
       saidas.join(' / ') || '—',
-      dayTotal,
+      totalMinutes > 0 ? formatMinutes(totalMinutes) : '—',
+      observations.join('; ') || '—',
     ];
   });
 }
@@ -446,150 +515,301 @@ function buildDayTable(records) {
 function ReportTab({ token }) {
   const [employees, setEmployees] = useState([]);
   const [pdfEmp, setPdfEmp] = useState('');
-  const [pdfMonth, setPdfMonth] = useState('');
+  const [pdfMonth, setPdfMonth] = useState(getCurrentMonthKey);
   const [generating, setGenerating] = useState(false);
   const [storeName, setStoreName] = useState('Pet Patas');
   const [weeklyHours, setWeeklyHours] = useState(44);
+  const [employerDocument, setEmployerDocument] = useState('');
+  const [employerRegistration, setEmployerRegistration] = useState('');
+  const [contractualSchedule, setContractualSchedule] = useState('');
 
   useEffect(() => {
-    const now = new Date();
-    setPdfMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
-    fetch('/api/employees').then((r) => r.json()).then(setEmployees);
-    fetch('/api/settings').then((r) => r.json()).then((s) => {
-      setStoreName(s.store_name);
+    fetch('/api/employees?include_inactive=true', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => readJson(r, []))
+      .then((data) => setEmployees(safeArray(data).filter((e) => e.active)));
+    fetch('/api/settings', { headers: { Authorization: `Bearer ${token}` } }).then((r) => readJson(r, {})).then((s) => {
+      setStoreName(s.store_name || 'Pet Patas');
       setWeeklyHours(s.weekly_hours || 44);
+      setEmployerDocument(s.employer_document || '');
+      setEmployerRegistration(s.employer_registration || '');
+      setContractualSchedule(s.contractual_schedule || '');
     });
-  }, []);
+  }, [token]);
+
+  function drawReportHeader(doc, monthKey) {
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const safeMonth = normalizeMonthKey(monthKey);
+    const [year, month] = safeMonth.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).toLocaleDateString('pt-BR');
+
+    doc.setFillColor(15, 76, 92);
+    doc.rect(0, 0, pageWidth, 36, 'F');
+    doc.setTextColor(255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text('Espelho de Ponto Eletrônico', 14, 16);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(`${getMonthLabel(safeMonth)} · Emitido em ${formatBusinessDateTime(new Date(), { second: '2-digit' })}`, 14, 25);
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Empregador', 14, 47);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Nome/Razão social: ${storeName}`, 14, 54);
+    doc.text(`CNPJ/CPF: ${nullableText(employerDocument)}`, 14, 60);
+    doc.text(`CEI/CAEPF/CNO: ${nullableText(employerRegistration)}`, 110, 60);
+    doc.text(`Período: 01/${safeMonth.slice(5)}/${safeMonth.slice(0, 4)} a ${lastDay}`, 14, 66);
+    doc.text(`Jornada contratual: ${contractualSchedule || `${weeklyHours}h semanais`}`, 110, 66);
+    doc.setDrawColor(220);
+    doc.line(14, 72, pageWidth - 14, 72);
+  }
+
+  function drawEmployeeBlock(doc, y, employeeInfo, summary) {
+    const balance = summary.totalMinutes - summary.expectedMinutes;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 118, 110);
+    doc.text(employeeInfo.name, 14, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(80);
+    doc.text(`CPF: ${formatCpf(employeeInfo.cpf)}`, 14, y + 7);
+    doc.text(`Admissão: ${formatDateOnly(employeeInfo.admissionDate)}`, 70, y + 7);
+    doc.text(`Cargo/Função: ${nullableText(employeeInfo.role)}`, 126, y + 7);
+
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(14, y + 12, 182, 15, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30);
+    doc.text(`Trabalhadas: ${formatMinutes(summary.totalMinutes)}`, 18, y + 22);
+    doc.text(`Esperadas: ${formatMinutes(summary.expectedMinutes)}`, 76, y + 22);
+    doc.setTextColor(balance >= 0 ? 15 : 185, balance >= 0 ? 118 : 28, balance >= 0 ? 110 : 28);
+    doc.text(`Saldo: ${balance >= 0 ? '+' : ''}${formatMinutes(balance)}`, 136, y + 22);
+    doc.setTextColor(80);
+
+    return y + 34;
+  }
+
+  function drawPdfFooter(doc, filenameContext) {
+    const pages = doc.internal.getNumberOfPages();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(130);
+      doc.text(`${storeName} · ${filenameContext}`, 14, pageHeight - 8);
+      doc.text(`Página ${i}/${pages}`, doc.internal.pageSize.getWidth() - 14, pageHeight - 8, { align: 'right' });
+    }
+  }
 
   async function handleGeneratePDF() {
-    if (!pdfMonth) { alert('Selecione um mês.'); return; }
+    const safeMonth = normalizeMonthKey(pdfMonth);
+    if (safeMonth !== pdfMonth) setPdfMonth(safeMonth);
+
     setGenerating(true);
     try {
-      const p = new URLSearchParams({ month: pdfMonth });
+      const p = new URLSearchParams({ month: safeMonth });
       if (pdfEmp) p.set('employee_id', pdfEmp);
-      const records = await (await fetch(`/api/records?${p}`, { headers: { Authorization: `Bearer ${token}` } })).json();
+      const records = safeArray(await readJson(
+        await fetch(`/api/records?${p}`, { headers: { Authorization: `Bearer ${token}` } }),
+        [],
+      ));
       if (!records.length) { alert('Nenhum registro no período.'); return; }
 
-      const { jsPDF } = await import('jspdf');
-      const { autoTable } = await import('jspdf-autotable');
+      const { jsPDF, autoTable } = await loadPdfLibraries();
       const doc = new jsPDF();
-      const [year, month] = pdfMonth.split('-').map(Number);
-      const MN = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-      const pw = doc.internal.pageSize.getWidth();
-      const expectedMinutes = calcExpectedMonthlyMinutes(pdfMonth, weeklyHours);
+      const expectedMinutes = calculateExpectedMonthlyMinutes(safeMonth, weeklyHours);
 
-      doc.setFontSize(20); doc.setTextColor(46, 125, 50); doc.text(storeName, 14, 22);
-      doc.setFontSize(13); doc.setTextColor(80); doc.text(`Relatório de Ponto — ${MN[month-1]} de ${year}`, 14, 32);
-      doc.setFontSize(8); doc.setTextColor(150); doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}  |  Carga: ${weeklyHours}h/semana`, 14, 39);
+      drawReportHeader(doc, safeMonth);
 
       const byEmp = {};
       records.forEach((r) => { (byEmp[r.employee_name] = byEmp[r.employee_name] || []).push(r); });
-      let y = 48;
-
+      let y = 82;
       const summaryData = [];
 
       Object.entries(byEmp).forEach(([name, recs]) => {
-        if (y > 220) { doc.addPage(); y = 18; }
-        doc.setFontSize(12); doc.setTextColor(46, 125, 50); doc.text(name, 14, y); y += 2;
+        if (y > 218) {
+          doc.addPage();
+          drawReportHeader(doc, safeMonth);
+          y = 82;
+        }
 
-        const { totalMinutes } = calcWorkedHours(recs);
-        const balance = totalMinutes - expectedMinutes;
-        summaryData.push({ name, totalMinutes, expectedMinutes, balance });
+        const { totalMinutes } = calculateWorkedHours(recs);
+        const employeeInfo = getEmployeeInfo(name, recs);
+        summaryData.push({
+          ...employeeInfo,
+          totalMinutes,
+          expectedMinutes,
+          balance: totalMinutes - expectedMinutes,
+        });
+        y = drawEmployeeBlock(doc, y, employeeInfo, { totalMinutes, expectedMinutes });
 
         autoTable(doc, {
           startY: y,
-          head: [['Data', 'Entradas', 'Saídas', 'Total Dia']],
+          head: [['Data', 'Entradas', 'Saídas', 'Duração', 'Observações']],
           body: buildDayTable(recs),
-          theme: 'striped',
-          headStyles: { fillColor: [46, 125, 50], textColor: 255, fontSize: 9 },
-          bodyStyles: { fontSize: 9 },
-          columnStyles: { 3: { halign: 'center', fontStyle: 'bold' } },
+          theme: 'grid',
+          headStyles: { fillColor: [15, 76, 92], textColor: 255, fontSize: 8.5, fontStyle: 'bold' },
+          bodyStyles: { fontSize: 8.5, textColor: [55, 65, 81], cellPadding: 2.4 },
+          alternateRowStyles: { fillColor: [248, 250, 252] },
+          columnStyles: {
+            0: { cellWidth: 39 },
+            1: { cellWidth: 38 },
+            2: { cellWidth: 38 },
+            3: { cellWidth: 24, halign: 'center', fontStyle: 'bold' },
+            4: { cellWidth: 43 },
+          },
           margin: { left: 14, right: 14 },
         });
-        y = doc.lastAutoTable.finalY + 4;
-        doc.setFontSize(9); doc.setTextColor(80);
-        doc.text(
-          `Trabalhadas: ${formatMinutes(totalMinutes)}  |  Esperado: ${formatMinutes(expectedMinutes)}  |  Saldo: ${balance >= 0 ? '+' : ''}${formatMinutes(balance)}`,
-          14, y,
-        );
-        y += 14;
+        y = doc.lastAutoTable.finalY + 12;
       });
 
-      // Tabela resumo geral (quando mais de 1 funcionário)
       if (Object.keys(byEmp).length > 1) {
-        if (y > 210) { doc.addPage(); y = 18; }
-        doc.setFontSize(12); doc.setTextColor(46, 125, 50); doc.text('Resumo Geral', 14, y); y += 2;
+        if (y > 210) {
+          doc.addPage();
+          drawReportHeader(doc, safeMonth);
+          y = 82;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(15, 118, 110);
+        doc.text('Resumo geral do período', 14, y);
+        y += 6;
 
         autoTable(doc, {
           startY: y,
-          head: [['Funcionário', 'Trabalhadas', 'Esperado', 'Saldo']],
+          head: [['Funcionário', 'CPF', 'Cargo/Função', 'Trabalhadas', 'Esperadas', 'Saldo']],
           body: summaryData.map((s) => [
             s.name,
+            formatCpf(s.cpf),
+            nullableText(s.role),
             formatMinutes(s.totalMinutes),
             formatMinutes(s.expectedMinutes),
             `${s.balance >= 0 ? '+' : ''}${formatMinutes(s.balance)}`,
           ]),
-          theme: 'striped',
-          headStyles: { fillColor: [46, 125, 50], textColor: 255, fontSize: 10 },
-          bodyStyles: { fontSize: 10 },
-          columnStyles: { 3: { fontStyle: 'bold' } },
+          theme: 'grid',
+          headStyles: { fillColor: [15, 76, 92], textColor: 255, fontSize: 8.5 },
+          bodyStyles: { fontSize: 8.5 },
+          columnStyles: {
+            3: { halign: 'center' },
+            4: { halign: 'center' },
+            5: { halign: 'center', fontStyle: 'bold' },
+          },
           margin: { left: 14, right: 14 },
         });
         y = doc.lastAutoTable.finalY + 14;
       }
 
-      // Assinatura — apenas funcionário
-      if (y > 250) { doc.addPage(); y = 30; }
-      const sigY = y + 12;
-      doc.setDrawColor(160); doc.setLineWidth(0.3);
-      const sigMid = pw / 2;
-      doc.line(sigMid - 50, sigY, sigMid + 50, sigY);
-      doc.setFontSize(9); doc.setTextColor(100);
-      doc.text('Funcionário', sigMid, sigY + 5, { align: 'center' });
-      doc.setFontSize(8); doc.setTextColor(150);
-      doc.text(storeName, sigMid, sigY + 10, { align: 'center' });
+      if (y > 235) {
+        doc.addPage();
+        drawReportHeader(doc, safeMonth);
+        y = 86;
+      }
 
-      const pages = doc.internal.getNumberOfPages();
-      for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(160); doc.text(`${storeName} — Pág. ${i}/${pages}`, 14, 288); }
-      doc.save(`ponto_${pdfMonth}.pdf`);
-    } catch (err) { console.error(err); alert('Erro ao gerar PDF.'); }
-    finally { setGenerating(false); }
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(110);
+      doc.text(
+        'Documento gerado para conferência mensal das marcações de ponto. Campos não cadastrados aparecem como "Não informado".',
+        14,
+        y,
+        { maxWidth: 182 },
+      );
+
+      const sigY = y + 12;
+      doc.setDrawColor(150);
+      doc.setLineWidth(0.3);
+      doc.line(24, sigY + 16, 90, sigY + 16);
+      doc.line(120, sigY + 16, 186, sigY + 16);
+      doc.setFontSize(9); doc.setTextColor(100);
+      doc.text('Assinatura do trabalhador', 57, sigY + 22, { align: 'center' });
+      doc.text('Responsável da empresa', 153, sigY + 22, { align: 'center' });
+
+      drawPdfFooter(doc, `Espelho de ponto ${getMonthLabel(safeMonth)}`);
+      doc.save(`espelho_ponto_${safeMonth}${pdfEmp ? `_funcionario_${pdfEmp}` : ''}.pdf`);
+    } catch (err) {
+      console.error(err);
+      alert(`Erro ao gerar PDF: ${err.message || 'verifique os dados do relatório.'}`);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   async function handleExportJSON() {
-    const records = await (await fetch('/api/records?', { headers: { Authorization: `Bearer ${token}` } })).json();
-    const blob = new Blob([JSON.stringify({ storeName, exportDate: new Date().toISOString(), records }, null, 2)], { type: 'application/json' });
+    const safeMonth = normalizeMonthKey(pdfMonth);
+    const p = new URLSearchParams({ month: safeMonth });
+    if (pdfEmp) p.set('employee_id', pdfEmp);
+
+    const records = safeArray(await readJson(
+      await fetch(`/api/records?${p.toString()}`, { headers: { Authorization: `Bearer ${token}` } }),
+      [],
+    ));
+    const todayKey = getBusinessDateKey();
+    const blob = new Blob([JSON.stringify({ storeName, exportDate: todayKey, month: safeMonth, employee_id: pdfEmp || null, records }, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `backup_ponto_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `backup_ponto_${todayKey}.json`;
     a.click();
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <Card title="Gerar Relatório PDF" icon={<IconDoc />}>
-        <div className="space-y-4">
-          <Field label="Funcionário">
-            <select value={pdfEmp} onChange={(e) => setPdfEmp(e.target.value)} className="input-style">
-              <option value="">Todos</option>
-              {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </select>
-          </Field>
-          <Field label="Mês">
-            <input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} className="input-style" />
-          </Field>
+    <div className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+      <Card title="Espelho de Ponto" icon={<IconDoc />}>
+        <div className="space-y-5">
+          <div className="rounded-[26px] bg-slate-900 p-5 text-white shadow-[0_22px_50px_rgba(15,23,42,0.16)]">
+            <p className="text-xs font-bold uppercase tracking-[0.26em] text-teal-200">Relatório mensal</p>
+            <h3 className="mt-3 text-2xl font-black">PDF para conferência e assinatura</h3>
+            <p className="mt-2 text-sm leading-6 text-white/60">
+              Inclui identificação do empregador e trabalhador, período, jornada contratual, marcações, duração diária, saldo e campos de assinatura.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Funcionário">
+              <select value={pdfEmp} onChange={(e) => setPdfEmp(e.target.value)} className="input-style">
+                <option value="">Todos os colaboradores</option>
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Mês">
+              <input type="month" value={pdfMonth} onChange={(e) => setPdfMonth(e.target.value)} className="input-style" />
+            </Field>
+          </div>
+
           <button onClick={handleGeneratePDF} disabled={generating}
-            className="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:shadow-xl disabled:opacity-50">
-            {generating ? 'Gerando...' : 'Gerar e Baixar PDF'}
+            className="w-full rounded-[22px] bg-[linear-gradient(135deg,#0f766e_0%,#0f4c5c_100%)] py-4 text-sm font-extrabold text-white shadow-[0_22px_40px_rgba(15,118,110,0.22)] transition hover:-translate-y-0.5 hover:shadow-xl disabled:opacity-50">
+            {generating ? 'Gerando relatório...' : 'Gerar espelho de ponto em PDF'}
           </button>
         </div>
       </Card>
 
-      <Card title="Backup de Dados" icon={<IconSave />}>
-        <p className="text-sm text-slate-400 mb-4">Exporta todos os registros como JSON para backup mensal.</p>
-        <button onClick={handleExportJSON} className="w-full rounded-xl bg-slate-100 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-200">
-          Exportar JSON
-        </button>
+      <Card title="Dados do Relatório" icon={<IconSave />}>
+        <div className="space-y-4">
+          <div className="rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800 ring-1 ring-amber-100">
+            Para ficar completo, cadastre em Configurações o CNPJ/CPF, CEI/CAEPF/CNO quando houver, jornada contratual e os dados do colaborador.
+          </div>
+          <div className="grid gap-3 text-sm">
+            <div className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 px-4 py-3">
+              <span className="font-semibold text-slate-500">Loja</span>
+              <span className="text-right font-bold text-slate-800">{storeName}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 px-4 py-3">
+              <span className="font-semibold text-slate-500">CNPJ/CPF</span>
+              <span className="text-right font-bold text-slate-800">{nullableText(employerDocument)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-2xl bg-slate-50 px-4 py-3">
+              <span className="font-semibold text-slate-500">Jornada</span>
+              <span className="text-right font-bold text-slate-800">{contractualSchedule || `${weeklyHours}h/semana`}</span>
+            </div>
+          </div>
+          <button onClick={handleExportJSON} className="w-full rounded-[20px] bg-slate-100 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-200">
+            Exportar backup JSON
+          </button>
+        </div>
       </Card>
     </div>
   );
@@ -601,7 +821,13 @@ function SettingsTab({ token }) {
   const [employees, setEmployees] = useState([]);
   const [newEmpName, setNewEmpName] = useState('');
   const [newEmpPin, setNewEmpPin] = useState('');
+  const [newEmpCpf, setNewEmpCpf] = useState('');
+  const [newEmpRole, setNewEmpRole] = useState('');
+  const [newEmpAdmissionDate, setNewEmpAdmissionDate] = useState('');
   const [storeName, setStoreName] = useState('');
+  const [employerDocument, setEmployerDocument] = useState('');
+  const [employerRegistration, setEmployerRegistration] = useState('');
+  const [contractualSchedule, setContractualSchedule] = useState('');
   const [storeMsg, setStoreMsg] = useState('');
   const [weeklyHours, setWeeklyHours] = useState(44);
   const [hoursMsg, setHoursMsg] = useState('');
@@ -613,14 +839,19 @@ function SettingsTab({ token }) {
     fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...opts.headers } }), [token]);
 
   const loadEmployees = useCallback(() => {
-    authFetch('/api/employees?include_inactive=true').then((r) => r.json()).then(setEmployees);
-  }, []);
+    authFetch('/api/employees?include_inactive=true')
+      .then((r) => readJson(r, []))
+      .then((data) => setEmployees(safeArray(data)));
+  }, [authFetch]);
 
   useEffect(() => {
     loadEmployees();
-    fetch('/api/settings').then((r) => r.json()).then((s) => {
-      setStoreName(s.store_name);
+    fetch('/api/settings', { headers: { Authorization: `Bearer ${token}` } }).then((r) => readJson(r, {})).then((s) => {
+      setStoreName(s.store_name || 'Pet Patas');
       setWeeklyHours(s.weekly_hours || 44);
+      setEmployerDocument(s.employer_document || '');
+      setEmployerRegistration(s.employer_registration || '');
+      setContractualSchedule(s.contractual_schedule || '');
     });
   }, [loadEmployees]);
 
@@ -631,14 +862,27 @@ function SettingsTab({ token }) {
       alert('PIN deve ter entre 4 e 8 dígitos.');
       return;
     }
-    const res = await authFetch('/api/employees', { method: 'POST', body: JSON.stringify({ name: newEmpName.trim(), pin: newEmpPin }) });
+    const res = await authFetch('/api/employees', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: newEmpName.trim(),
+        pin: newEmpPin,
+        cpf: newEmpCpf,
+        role: newEmpRole,
+        admission_date: newEmpAdmissionDate || null,
+      }),
+    });
     if (!res.ok) { alert((await res.json()).error); return; }
     setNewEmpName('');
     setNewEmpPin('');
+    setNewEmpCpf('');
+    setNewEmpRole('');
+    setNewEmpAdmissionDate('');
     loadEmployees();
   }
 
   const [pinModal, setPinModal] = useState({ open: false, employee: null, pin: '', loading: false, error: '', success: false });
+  const [editModal, setEditModal] = useState({ open: false, employee: null, name: '', cpf: '', role: '', admission_date: '', loading: false, error: '' });
 
   function openPinModal(emp) {
     setPinModal({ open: true, employee: emp, pin: '', loading: false, error: '', success: false });
@@ -646,6 +890,48 @@ function SettingsTab({ token }) {
 
   function closePinModal() {
     setPinModal({ open: false, employee: null, pin: '', loading: false, error: '', success: false });
+  }
+
+  function openEditModal(emp) {
+    setEditModal({
+      open: true,
+      employee: emp,
+      name: emp.name || '',
+      cpf: emp.cpf || '',
+      role: emp.role || '',
+      admission_date: emp.admission_date ? String(emp.admission_date).slice(0, 10) : '',
+      loading: false,
+      error: '',
+    });
+  }
+
+  function closeEditModal() {
+    setEditModal({ open: false, employee: null, name: '', cpf: '', role: '', admission_date: '', loading: false, error: '' });
+  }
+
+  async function handleUpdateEmployeeDetails() {
+    if (!editModal.name.trim()) {
+      setEditModal((prev) => ({ ...prev, error: 'Nome é obrigatório.' }));
+      return;
+    }
+
+    setEditModal((prev) => ({ ...prev, loading: true, error: '' }));
+    const res = await authFetch(`/api/employees/${editModal.employee.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: editModal.name.trim(),
+        cpf: editModal.cpf,
+        role: editModal.role,
+        admission_date: editModal.admission_date || null,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setEditModal((prev) => ({ ...prev, loading: false, error: data.error || 'Erro ao salvar dados.' }));
+      return;
+    }
+    closeEditModal();
+    loadEmployees();
   }
 
   async function handleUpdatePin() {
@@ -710,7 +996,15 @@ function SettingsTab({ token }) {
   }
 
   async function handleSaveStoreName() {
-    await authFetch('/api/settings', { method: 'PUT', body: JSON.stringify({ store_name: storeName }) });
+    await authFetch('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        store_name: storeName,
+        employer_document: employerDocument,
+        employer_registration: employerRegistration,
+        contractual_schedule: contractualSchedule,
+      }),
+    });
     setStoreMsg('Salvo!');
     setTimeout(() => setStoreMsg(''), 2000);
   }
@@ -763,20 +1057,26 @@ function SettingsTab({ token }) {
         ) : (
           <div className="mb-4 divide-y divide-slate-100 rounded-xl border border-slate-100 bg-slate-50/50">
             {employees.filter((e) => e.active).map((emp) => (
-              <div key={emp.id} className="flex items-center justify-between px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white">{initials(emp.name)}</div>
-                  <div>
-                    <span className="text-sm font-medium text-slate-700">{emp.name}</span>
-                    <span className={`ml-2 text-xs font-medium ${emp.hasPin ? 'text-emerald-500' : 'text-amber-500'}`}>
-                      {emp.hasPin ? 'PIN ativo' : 'Sem PIN'}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => openPinModal(emp)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-blue-600 transition hover:bg-blue-50">
-                    {emp.hasPin ? 'Alterar PIN' : 'Definir PIN'}
-                  </button>
+	              <div key={emp.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+	                <div className="flex items-center gap-3">
+	                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-xs font-bold text-white">{initials(emp.name)}</div>
+	                  <div>
+	                    <span className="text-sm font-medium text-slate-700">{emp.name}</span>
+	                    <span className={`ml-2 text-xs font-medium ${emp.hasPin ? 'text-emerald-500' : 'text-amber-500'}`}>
+	                      {emp.hasPin ? 'PIN ativo' : 'Sem PIN'}
+	                    </span>
+	                    <p className="mt-0.5 text-xs text-slate-400">
+	                      {emp.role || 'Cargo não informado'} · CPF {formatCpf(emp.cpf)}
+	                    </p>
+	                  </div>
+	                </div>
+	                <div className="flex flex-wrap gap-2">
+	                  <button onClick={() => openEditModal(emp)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">
+	                    Editar dados
+	                  </button>
+	                  <button onClick={() => openPinModal(emp)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-blue-600 transition hover:bg-blue-50">
+	                    {emp.hasPin ? 'Alterar PIN' : 'Definir PIN'}
+	                  </button>
                   <button onClick={() => handleRemoveEmployee(emp.id)} className="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-500 transition hover:bg-red-50">Remover</button>
                 </div>
               </div>
@@ -874,6 +1174,71 @@ function SettingsTab({ token }) {
           </div>
         )}
 
+        {editModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="mb-5 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+                  <IconUsers />
+                </div>
+                <div>
+                  <p className="font-bold text-slate-800">Dados do colaborador</p>
+                  <p className="text-xs text-slate-400">Usados no espelho de ponto</p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Nome">
+                  <input
+                    type="text"
+                    value={editModal.name}
+                    onChange={(e) => setEditModal((prev) => ({ ...prev, name: e.target.value, error: '' }))}
+                    className="input-style"
+                  />
+                </Field>
+                <Field label="CPF">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={editModal.cpf}
+                    onChange={(e) => setEditModal((prev) => ({ ...prev, cpf: e.target.value.replace(/\D/g, '').slice(0, 11), error: '' }))}
+                    placeholder="Somente números"
+                    className="input-style"
+                  />
+                </Field>
+                <Field label="Cargo/Função">
+                  <input
+                    type="text"
+                    value={editModal.role}
+                    onChange={(e) => setEditModal((prev) => ({ ...prev, role: e.target.value, error: '' }))}
+                    placeholder="Ex: Tosador(a)"
+                    className="input-style"
+                  />
+                </Field>
+                <Field label="Admissão">
+                  <input
+                    type="date"
+                    value={editModal.admission_date}
+                    onChange={(e) => setEditModal((prev) => ({ ...prev, admission_date: e.target.value, error: '' }))}
+                    className="input-style"
+                  />
+                </Field>
+              </div>
+
+              {editModal.error && <p className="mt-3 text-xs font-semibold text-red-600">{editModal.error}</p>}
+
+              <div className="mt-5 flex gap-2">
+                <button onClick={closeEditModal} className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+                  Cancelar
+                </button>
+                <button onClick={handleUpdateEmployeeDetails} disabled={editModal.loading} className="flex-1 rounded-xl bg-teal-700 py-2.5 text-sm font-bold text-white transition hover:bg-teal-800 disabled:opacity-50">
+                  {editModal.loading ? 'Salvando...' : 'Salvar dados'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Inativos */}
         {employees.filter((e) => !e.active).length > 0 && (
           <div className="mb-4">
@@ -895,8 +1260,8 @@ function SettingsTab({ token }) {
           </div>
         )}
 
-        <form onSubmit={handleAddEmployee} className="flex flex-wrap gap-2">
-          <input type="text" value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} placeholder="Nome do funcionário" className="input-style flex-1 min-w-[140px]" />
+        <form onSubmit={handleAddEmployee} className="grid gap-3 md:grid-cols-2">
+          <input type="text" value={newEmpName} onChange={(e) => setNewEmpName(e.target.value)} placeholder="Nome do funcionário" className="input-style" />
           <input
             type="password"
             inputMode="numeric"
@@ -905,16 +1270,58 @@ function SettingsTab({ token }) {
             value={newEmpPin}
             onChange={(e) => setNewEmpPin(e.target.value.replace(/\D/g, ''))}
             placeholder="PIN (4-8 dígitos)"
-            className="input-style w-40"
+            className="input-style"
           />
-          <button type="submit" className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700">Adicionar</button>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={newEmpCpf}
+            onChange={(e) => setNewEmpCpf(e.target.value.replace(/\D/g, '').slice(0, 11))}
+            placeholder="CPF (opcional)"
+            className="input-style"
+          />
+          <input type="text" value={newEmpRole} onChange={(e) => setNewEmpRole(e.target.value)} placeholder="Cargo/Função (opcional)" className="input-style" />
+          <input type="date" value={newEmpAdmissionDate} onChange={(e) => setNewEmpAdmissionDate(e.target.value)} className="input-style" />
+          <button type="submit" className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700">Adicionar colaborador</button>
         </form>
       </Card>
 
-      {/* Nome da loja */}
-      <Card title="Nome da Loja" icon={<IconStore />}>
+      {/* Dados da empresa */}
+      <Card title="Dados da Empresa" icon={<IconStore />}>
+        <p className="mb-4 text-xs leading-5 text-slate-400">
+          Essas informações entram no cabeçalho do espelho de ponto.
+        </p>
         <Field label="Nome">
           <input type="text" value={storeName} onChange={(e) => setStoreName(e.target.value)} className="input-style" />
+        </Field>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Field label="CNPJ/CPF">
+            <input
+              type="text"
+              value={employerDocument}
+              onChange={(e) => setEmployerDocument(e.target.value)}
+              placeholder="Documento da empresa"
+              className="input-style"
+            />
+          </Field>
+          <Field label="CEI/CAEPF/CNO">
+            <input
+              type="text"
+              value={employerRegistration}
+              onChange={(e) => setEmployerRegistration(e.target.value)}
+              placeholder="Se houver"
+              className="input-style"
+            />
+          </Field>
+        </div>
+        <Field label="Horário/Jornada contratual">
+          <input
+            type="text"
+            value={contractualSchedule}
+            onChange={(e) => setContractualSchedule(e.target.value)}
+            placeholder="Ex: Seg a sáb, 08:00-12:00 / 13:00-17:20"
+            className="input-style"
+          />
         </Field>
         <button onClick={handleSaveStoreName} className="mt-4 rounded-xl bg-slate-100 px-5 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-200">Salvar</button>
         {storeMsg && <span className="ml-3 text-sm font-semibold text-emerald-600">{storeMsg}</span>}
@@ -1004,12 +1411,15 @@ function SettingsTab({ token }) {
 
 function Card({ title, icon, danger, className = '', children }) {
   return (
-    <div className={`rounded-2xl bg-white p-6 shadow-sm ring-1 ${danger ? 'ring-red-200' : 'ring-black/[0.04]'} ${className}`}>
-      <div className="mb-4 flex items-center gap-2.5">
-        <span className={danger ? 'text-red-500' : 'text-emerald-600'}>{icon}</span>
-        <h3 className={`text-sm font-bold ${danger ? 'text-red-600' : 'text-slate-700'}`}>{title}</h3>
+    <div className={`surface-card-strong mesh-panel rounded-[30px] p-6 ${className}`}>
+      <div className="relative z-10 mb-5 flex items-center gap-3">
+        <span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${danger ? 'bg-red-50 text-red-500 ring-1 ring-red-100' : 'bg-teal-50 text-teal-700 ring-1 ring-teal-100'}`}>{icon}</span>
+        <div>
+          <p className="section-kicker">{danger ? 'Atenção' : 'Gestão'}</p>
+          <h3 className={`mt-1 text-base font-extrabold ${danger ? 'text-red-600' : 'text-slate-800'}`}>{title}</h3>
+        </div>
       </div>
-      {children}
+      <div className="relative z-10">{children}</div>
     </div>
   );
 }
@@ -1044,15 +1454,15 @@ function initials(name) { return name.trim().split(/\s+/).map((w) => w[0]).join(
 
 /* ═══════════ TAB: COLABORADORES ═══════════ */
 
-function EmployeesTab({ onSelectEmployee }) {
+function EmployeesTab({ token, onSelectEmployee }) {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/employees')
-      .then((r) => r.json())
-      .then((data) => { setEmployees(data); setLoading(false); });
-  }, []);
+    fetch('/api/employees?include_inactive=true', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => readJson(r, []))
+      .then((data) => { setEmployees(safeArray(data).filter((e) => e.active)); setLoading(false); });
+  }, [token]);
 
   if (loading) return (
     <div className="flex items-center justify-center py-20">
@@ -1074,18 +1484,18 @@ function EmployeesTab({ onSelectEmployee }) {
         <button
           key={emp.id}
           onClick={() => onSelectEmployee(emp)}
-          className="flex items-center justify-between rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/[0.04] transition hover:shadow-md hover:ring-emerald-200 text-left w-full group"
+          className="surface-card-strong mesh-panel flex w-full items-center justify-between rounded-[28px] p-5 text-left transition hover:-translate-y-1 hover:shadow-[0_24px_50px_rgba(15,23,42,0.12)] group"
         >
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-sm font-bold text-white shadow-md shadow-emerald-500/20">
+          <div className="relative z-10 flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-[22px] bg-gradient-to-br from-teal-700 to-emerald-500 text-sm font-bold text-white shadow-[0_18px_38px_rgba(15,118,110,0.22)]">
               {initials(emp.name)}
             </div>
             <div>
-              <p className="font-bold text-slate-800">{emp.name}</p>
-              <p className="text-xs text-emerald-600 font-medium">Ativo · Ver registros →</p>
+              <p className="text-lg font-extrabold text-slate-900">{emp.name}</p>
+              <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-teal-700">Ativo · Ver registros</p>
             </div>
           </div>
-          <span className="text-slate-300 transition group-hover:text-emerald-500">
+          <span className="relative z-10 text-slate-300 transition group-hover:translate-x-1 group-hover:text-teal-600">
             <IconChevronRight />
           </span>
         </button>
@@ -1107,14 +1517,20 @@ function EmployeeDetailView({ token, employee, onBack }) {
   const [generating, setGenerating] = useState(false);
   const [storeName, setStoreName] = useState('Pet Patas');
   const [weeklyHours, setWeeklyHours] = useState(44);
+  const [employerDocument, setEmployerDocument] = useState('');
+  const [employerRegistration, setEmployerRegistration] = useState('');
+  const [contractualSchedule, setContractualSchedule] = useState('');
 
   const authFetch = useCallback((url) =>
     fetch(url, { headers: { Authorization: `Bearer ${token}` } }), [token]);
 
   useEffect(() => {
-    fetch('/api/settings').then((r) => r.json()).then((s) => {
-      setStoreName(s.store_name);
+    fetch('/api/settings', { headers: { Authorization: `Bearer ${token}` } }).then((r) => readJson(r, {})).then((s) => {
+      setStoreName(s.store_name || 'Pet Patas');
       setWeeklyHours(s.weekly_hours || 44);
+      setEmployerDocument(s.employer_document || '');
+      setEmployerRegistration(s.employer_registration || '');
+      setContractualSchedule(s.contractual_schedule || '');
     });
   }, []);
 
@@ -1123,8 +1539,8 @@ function EmployeeDetailView({ token, employee, onBack }) {
     const p = new URLSearchParams({ employee_id: employee.id });
     if (filterMonth) p.set('month', filterMonth);
     authFetch(`/api/records?${p}`)
-      .then((r) => r.json())
-      .then((data) => { setRecords(data); setLoading(false); });
+      .then((r) => readJson(r, []))
+      .then((data) => { setRecords(safeArray(data)); setLoading(false); });
   }, [employee.id, filterMonth, authFetch]);
 
   function closePhoto() { setPhotoModal({ open: false, loading: false, src: null }); }
@@ -1144,26 +1560,36 @@ function EmployeeDetailView({ token, employee, onBack }) {
     if (!records.length) { alert('Nenhum registro no período.'); return; }
     setGenerating(true);
     try {
-      const { jsPDF } = await import('jspdf');
-      const { autoTable } = await import('jspdf-autotable');
+      const { jsPDF, autoTable } = await loadPdfLibraries();
       const doc = new jsPDF();
-      const [year, month] = filterMonth.split('-').map(Number);
-      const MN = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+      const safeMonth = normalizeMonthKey(filterMonth);
+      const [year, month] = safeMonth.split('-').map(Number);
       const pw = doc.internal.pageSize.getWidth();
 
       // Header
-      doc.setFontSize(20); doc.setTextColor(46, 125, 50); doc.text(storeName, 14, 22);
-      doc.setFontSize(13); doc.setTextColor(80); doc.text(`Relatório de Ponto — ${employee.name}`, 14, 32);
-      doc.setFontSize(10); doc.setTextColor(100); doc.text(`${MN[month - 1]} de ${year}`, 14, 40);
-      doc.setFontSize(8); doc.setTextColor(150); doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 47);
+      doc.setFillColor(15, 76, 92);
+      doc.rect(0, 0, pw, 34, 'F');
+      doc.setFontSize(17); doc.setTextColor(255); doc.setFont(undefined, 'bold'); doc.text('Espelho de Ponto Eletrônico', 14, 15);
+      doc.setFont(undefined, 'normal'); doc.setFontSize(10); doc.text(`${MONTH_NAMES[month - 1]} de ${year} · ${employee.name}`, 14, 24);
+
+      doc.setFontSize(8.5); doc.setTextColor(80);
+      doc.text(`Empregador: ${storeName}`, 14, 44);
+      doc.text(`CNPJ/CPF: ${nullableText(employerDocument)}`, 14, 50);
+      doc.text(`CEI/CAEPF/CNO: ${nullableText(employerRegistration)}`, 90, 50);
+      doc.text(`Trabalhador: ${employee.name}`, 14, 58);
+      doc.text(`CPF: ${formatCpf(employee.cpf)}`, 14, 64);
+      doc.text(`Admissão: ${formatDateOnly(employee.admission_date)}`, 70, 64);
+      doc.text(`Cargo/Função: ${nullableText(employee.role)}`, 126, 64);
+      doc.text(`Jornada contratual: ${contractualSchedule || `${weeklyHours}h semanais`}`, 14, 72);
+      doc.text(`Emitido em: ${formatBusinessDateTime(new Date(), { second: '2-digit' })}`, 126, 72);
 
       autoTable(doc, {
-        startY: 55,
-        head: [['Data', 'Entradas', 'Saídas', 'Total Dia']],
+        startY: 80,
+        head: [['Data', 'Entradas', 'Saídas', 'Duração', 'Observações']],
         body: buildDayTable(records),
-        theme: 'striped',
-        headStyles: { fillColor: [46, 125, 50], textColor: 255, fontSize: 9 },
-        bodyStyles: { fontSize: 9 },
+        theme: 'grid',
+        headStyles: { fillColor: [15, 76, 92], textColor: 255, fontSize: 8.5 },
+        bodyStyles: { fontSize: 8.5 },
         columnStyles: { 3: { halign: 'center', fontStyle: 'bold' } },
         margin: { left: 14, right: 14 },
       });
@@ -1215,7 +1641,7 @@ function EmployeeDetailView({ token, employee, onBack }) {
 
   function handleExportJSON() {
     const blob = new Blob(
-      [JSON.stringify({ storeName, employee: employee.name, month: filterMonth, exportDate: new Date().toISOString(), records }, null, 2)],
+      [JSON.stringify({ storeName, employee: employee.name, month: filterMonth, exportDate: getBusinessDateKey(), records }, null, 2)],
       { type: 'application/json' },
     );
     const a = document.createElement('a');
@@ -1226,8 +1652,8 @@ function EmployeeDetailView({ token, employee, onBack }) {
 
   const entradas = records.filter((r) => r.type === 'entrada').length;
   const saidas = records.filter((r) => r.type === 'saida').length;
-  const hoursData = useMemo(() => calcWorkedHours(records), [records]);
-  const expectedMinutes = useMemo(() => calcExpectedMonthlyMinutes(filterMonth, weeklyHours), [filterMonth, weeklyHours]);
+  const hoursData = useMemo(() => calculateWorkedHours(records), [records]);
+  const expectedMinutes = useMemo(() => calculateExpectedMonthlyMinutes(filterMonth, weeklyHours), [filterMonth, weeklyHours]);
   const balanceMinutes = hoursData.totalMinutes - expectedMinutes;
 
   return (
@@ -1358,9 +1784,11 @@ function EmployeeDetailView({ token, employee, onBack }) {
               {records.map((r) => (
                 <tr key={r.id} className="transition-colors hover:bg-slate-50/50">
                   <td className="px-5 py-3.5 font-medium text-slate-600">
-                    {new Date(r.timestamp).toLocaleString('pt-BR', {
-                      weekday: 'short', day: '2-digit', month: '2-digit',
-                      year: 'numeric', hour: '2-digit', minute: '2-digit',
+                    {formatBusinessDateTime(r.timestamp, {
+                      weekday: 'short',
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric',
                     })}
                   </td>
                   <td className="px-5 py-3.5">

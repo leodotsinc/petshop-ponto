@@ -5,17 +5,32 @@ import bcrypt from 'bcryptjs';
 
 /**
  * GET /api/settings
- * Retorna configurações públicas (nome da loja, carga horária).
+ * Retorna configurações públicas e, quando autenticado como admin, dados do relatório.
  */
-export async function GET() {
+export async function GET(request) {
   try {
-    const rows = await db('settings').whereIn('key', ['store_name', 'weekly_hours']);
+    const auth = verifyAuth(request);
+    const rows = await db('settings').whereIn('key', [
+      'store_name',
+      'weekly_hours',
+      'employer_document',
+      'employer_registration',
+      'contractual_schedule',
+    ]);
     const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
 
-    return NextResponse.json({
+    const settings = {
       store_name: map.store_name || 'Pet Patas',
       weekly_hours: parseFloat(map.weekly_hours) || 44,
-    });
+    };
+
+    if (auth?.role === 'admin') {
+      settings.employer_document = map.employer_document || '';
+      settings.employer_registration = map.employer_registration || '';
+      settings.contractual_schedule = map.contractual_schedule || '';
+    }
+
+    return NextResponse.json(settings);
   } catch (err) {
     console.error('Erro ao buscar settings:', err);
     return NextResponse.json({ error: 'Erro interno' }, { status: 500 });
@@ -25,7 +40,7 @@ export async function GET() {
 /**
  * PUT /api/settings
  * Atualiza configurações. Requer autenticação admin.
- * Body: { store_name?, new_password?, weekly_hours? }
+ * Body: { store_name?, new_password?, weekly_hours?, employer_document?, employer_registration?, contractual_schedule? }
  */
 export async function PUT(request) {
   try {
@@ -34,7 +49,14 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const { store_name, new_password, weekly_hours } = await request.json();
+    const {
+      store_name,
+      new_password,
+      weekly_hours,
+      employer_document,
+      employer_registration,
+      contractual_schedule,
+    } = await request.json();
 
     if (store_name !== undefined) {
       await db('settings')
@@ -53,6 +75,20 @@ export async function PUT(request) {
       }
       await db('settings')
         .insert({ key: 'weekly_hours', value: String(hours) })
+        .onConflict('key')
+        .merge();
+    }
+
+    const optionalSettings = {
+      employer_document,
+      employer_registration,
+      contractual_schedule,
+    };
+
+    for (const [key, value] of Object.entries(optionalSettings)) {
+      if (value === undefined) continue;
+      await db('settings')
+        .insert({ key, value: String(value || '').trim() })
         .onConflict('key')
         .merge();
     }

@@ -1,6 +1,15 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
 const jwt = require('jsonwebtoken');
+import {
+  calculateExpectedMonthlyMinutes,
+  calculateWorkedHours,
+  formatBusinessDate,
+  getBusinessDateKey,
+  getBusinessDayRange,
+  getBusinessMonthKey,
+  getBusinessMonthRange,
+} from '@/lib/timekeeping';
 
 function verifyEmployeeToken(request, expectedId) {
   if (!process.env.JWT_SECRET) return null;
@@ -13,49 +22,6 @@ function verifyEmployeeToken(request, expectedId) {
   } catch {
     return null;
   }
-}
-
-function calcWorkedMinutes(records) {
-  const sorted = [...records].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  let minutes = 0;
-  let entryTime = null;
-  let entryId = null;
-  const orphanedIds = new Set();
-
-  for (const r of sorted) {
-    if (r.type === 'entrada') {
-      if (entryTime !== null) {
-        orphanedIds.add(entryId);
-      }
-      entryTime = new Date(r.timestamp);
-      entryId = r.id;
-    } else if (r.type === 'saida') {
-      if (entryTime === null) {
-        orphanedIds.add(r.id);
-      } else {
-        const diff = (new Date(r.timestamp) - entryTime) / 60000;
-        if (diff > 1440) {
-          orphanedIds.add(entryId);
-          orphanedIds.add(r.id);
-        } else if (diff > 0) {
-          minutes += diff;
-        }
-        entryTime = null;
-        entryId = null;
-      }
-    }
-  }
-
-  if (entryTime !== null) {
-    orphanedIds.add(entryId);
-  }
-
-  return { workedMinutes: Math.round(minutes), orphanedIds: [...orphanedIds] };
-}
-
-function calcExpectedMinutes(now, weeklyHours) {
-  const days = now.getDate();
-  return Math.round((weeklyHours / 7) * 60 * days);
 }
 
 /**
@@ -85,40 +51,46 @@ export async function GET(request, { params }) {
     const weeklyHours = parseFloat(weeklyHoursSetting?.value || '44');
 
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const monthKey = getBusinessMonthKey(now);
+    const todayKey = getBusinessDateKey(now);
+    const monthRange = getBusinessMonthRange(monthKey);
+    const todayRange = getBusinessDayRange(todayKey);
 
     const monthRecords = await db('records')
       .where({ employee_id: employeeId })
-      .whereBetween('timestamp', [startOfMonth.toISOString(), endOfMonth.toISOString()])
+      .where('timestamp', '>=', monthRange.start.toISOString())
+      .andWhere('timestamp', '<', monthRange.end.toISOString())
       .select('id', 'type', 'timestamp')
       .orderBy('timestamp', 'asc');
 
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const todayRecords = monthRecords.filter((r) => new Date(r.timestamp) >= startOfToday);
+    const todayRecords = monthRecords.filter((record) => {
+      const timestamp = new Date(record.timestamp);
+      return timestamp >= todayRange.start && timestamp < todayRange.end;
+    });
 
-    const { workedMinutes, orphanedIds } = calcWorkedMinutes(monthRecords);
-    const expectedMinutes = calcExpectedMinutes(now, weeklyHours);
+    const monthHours = calculateWorkedHours(monthRecords);
+    const todayHours = calculateWorkedHours(todayRecords);
+    const workedMinutes = monthHours.totalMinutes;
+    const expectedMinutes = calculateExpectedMonthlyMinutes(monthKey, weeklyHours, now);
     const balanceMinutes = workedMinutes - expectedMinutes;
-
-    const lastRecord = monthRecords.length > 0 ? monthRecords[monthRecords.length - 1] : null;
-    const currentStatus = lastRecord?.type === 'entrada' ? 'presente' : 'ausente';
-
-    const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const monthName = now.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
     return NextResponse.json({
       employee: { id: employee.id, name: employee.name },
-      today: { records: todayRecords, currentStatus, lastRecord },
+      today: {
+        records: todayRecords,
+        currentStatus: todayHours.currentStatus,
+        lastRecord: todayHours.lastRecord,
+        openEntry: todayHours.openEntry,
+      },
       month: {
-        yearMonth,
-        monthName,
+        yearMonth: monthKey,
+        monthName: formatBusinessDate(now, { month: 'long', year: 'numeric' }),
         records: monthRecords,
         workedMinutes,
         expectedMinutes,
         balanceMinutes,
         weeklyHours,
-        orphanedIds,
+        openEntry: monthHours.openEntry,
       },
     });
   } catch (err) {

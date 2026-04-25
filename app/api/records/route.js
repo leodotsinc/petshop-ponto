@@ -3,6 +3,12 @@ import db from '@/lib/db';
 import { verifyAuth } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
 import { rateLimit } from '@/lib/rate-limit';
+import {
+  getBusinessDateKey,
+  getBusinessDayRange,
+  getBusinessMonthRange,
+  getNextRecordType,
+} from '@/lib/timekeeping';
 
 /**
  * GET /api/records?employee_id=&date=&month=
@@ -32,6 +38,9 @@ export async function GET(request) {
         'records.lng',
         'records.created_at',
         'employees.name as employee_name',
+        'employees.cpf as employee_cpf',
+        'employees.role as employee_role',
+        'employees.admission_date as employee_admission_date',
       )
       .orderBy('records.timestamp', 'desc');
 
@@ -43,18 +52,20 @@ export async function GET(request) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return NextResponse.json({ error: 'Formato de data inválido (YYYY-MM-DD)' }, { status: 400 });
       }
-      query = query.whereRaw('DATE(records.timestamp) = ?', [date]);
+      const { start, end } = getBusinessDayRange(date);
+      query = query
+        .where('records.timestamp', '>=', start.toISOString())
+        .andWhere('records.timestamp', '<', end.toISOString());
     }
 
     if (month) {
       if (!/^\d{4}-\d{2}$/.test(month)) {
         return NextResponse.json({ error: 'Formato de mês inválido (YYYY-MM)' }, { status: 400 });
       }
-      const [y, m] = month.split('-');
-      query = query.whereRaw(
-        'EXTRACT(YEAR FROM records.timestamp) = ? AND EXTRACT(MONTH FROM records.timestamp) = ?',
-        [parseInt(y, 10), parseInt(m, 10)],
-      );
+      const { start, end } = getBusinessMonthRange(month);
+      query = query
+        .where('records.timestamp', '>=', start.toISOString())
+        .andWhere('records.timestamp', '<', end.toISOString());
     }
 
     const records = await query;
@@ -71,14 +82,10 @@ export async function GET(request) {
  */
 export async function POST(request) {
   try {
-    const { employee_id, type, photo, lat, lng, pin } = await request.json();
+    const { employee_id, photo, lat, lng, pin } = await request.json();
 
-    if (!employee_id || !type) {
-      return NextResponse.json({ error: 'employee_id e type são obrigatórios' }, { status: 400 });
-    }
-
-    if (!['entrada', 'saida'].includes(type)) {
-      return NextResponse.json({ error: 'type deve ser "entrada" ou "saida"' }, { status: 400 });
+    if (!employee_id) {
+      return NextResponse.json({ error: 'employee_id é obrigatório' }, { status: 400 });
     }
 
     // Rate limit por funcionário (10 tentativas por 15min)
@@ -108,8 +115,26 @@ export async function POST(request) {
       return NextResponse.json({ error: 'PIN incorreto' }, { status: 401 });
     }
 
+    const { start, end } = getBusinessDayRange(getBusinessDateKey());
+    const todayRecords = await db('records')
+      .where({ employee_id })
+      .where('timestamp', '>=', start.toISOString())
+      .andWhere('timestamp', '<', end.toISOString())
+      .select('type', 'timestamp')
+      .orderBy('timestamp', 'asc');
+
+    const resolvedType = getNextRecordType(todayRecords);
+
+    if (!photo || typeof photo !== 'string') {
+      return NextResponse.json({ error: 'Foto é obrigatória' }, { status: 400 });
+    }
+
+    if (!/^data:image\/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(photo)) {
+      return NextResponse.json({ error: 'Formato de foto inválido' }, { status: 400 });
+    }
+
     // Limita tamanho da foto (~5MB em base64 ≈ 7MB string)
-    if (photo && photo.length > 7 * 1024 * 1024) {
+    if (photo.length > 7 * 1024 * 1024) {
       return NextResponse.json({ error: 'Foto muito grande (máx. 5MB)' }, { status: 413 });
     }
 
@@ -124,8 +149,8 @@ export async function POST(request) {
     const [record] = await db('records')
       .insert({
         employee_id,
-        type,
-        photo: photo || null,
+        type: resolvedType,
+        photo,
         lat: lat || null,
         lng: lng || null,
         timestamp: new Date(),
