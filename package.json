@@ -15,7 +15,7 @@
     "dotenv": "^17.4.2",
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^4.2.1",
-    "jspdf-autotable": "^5.0.7",
+    "jspdf-autotable": "^5.0.8",
     "knex": "^3.2.10",
     "next": "^16.2.7",
     "pg": "^8.14.0",
